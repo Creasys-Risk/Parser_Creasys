@@ -227,5 +227,6 @@ if __name__ == '__main__':
     files = os.listdir("./input")
 
     for file in files:
-        filename,_ = file.split('.')
-        GoldmanParser(filename)
+        if ".pdf" in file:
+            filename,_ = file.split('.')
+            GoldmanParser(filename)

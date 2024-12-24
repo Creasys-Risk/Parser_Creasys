@@ -59,5 +59,6 @@ if __name__ == "__main__":
     files = os.listdir("./input")
 
     for file in files:
-        filename,_ = file.split('.')
-        JPM_Parser(filename)
+        if ".pdf" in file:
+            filename,_ = file.split('.')
+            JPM_Parser(filename)
