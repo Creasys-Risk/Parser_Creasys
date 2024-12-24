@@ -45,6 +45,62 @@ def GenerateResultList(client_info: list[str]) -> list[str]:
 
     return client_result
 
+def GenerateResultProduct(client_result: list[str], product_name: str, date_document: date, client: str, portfolio_number: str, currency: str) -> list[dict]:
+    results_product = []
+    
+    for row in client_result:
+        if "TOTAL" in row:
+            continue
+
+        row = row.replace(",", "")
+        row = row.replace(")", " ")
+        row = row.replace("(", "-")
+        row_data = row.split(" ")
+        row_data = [x for x in row_data if x != '']
+
+        if len(row_data) < 8:
+            continue
+
+        try:
+            float(row_data[3])
+            quantity = float(row_data[0])
+            market_price = float(row_data[1])
+            market_value = float(row_data[2])
+            mnemonic = ' '.join([x for x in row_data if re.search(r"[a-zA-Z]", x)])
+        except ValueError:
+            continue
+
+        try:
+            float(row_data[8])
+            accrued_income = float(row_data[3])
+            unit_cost = float(row_data[4])
+            cost_basis = float(row_data[5])
+        except ValueError:
+            accrued_income = 0.0
+            unit_cost = float(row_data[3])
+            cost_basis = float(row_data[4])
+
+        results_product.append({
+            "Fecha": date_document,
+            "Nombre": client,
+            "Rut": "",
+            "Cuenta": portfolio_number,
+            "Nemotecnico": mnemonic,
+            "Moneda": currency,
+            "ISIN": "",
+            "CUSIP": "",
+            "Cantidad": quantity,
+            "Precio_Mercado": market_price,
+            "Valor_Mercado": market_value,
+            "Precio_Compra": unit_cost,
+            "Valor_Compra": cost_basis,
+            "Interes_Acum": accrued_income,
+            "Contraparte": "GOLDMAN SACHS",
+            "Clase_Activo": product_name,
+        })
+
+    return results_product
+
 def GoldmanParser(filename: str):
     reader = PdfReader(f"./input/{filename}.pdf")
 
@@ -54,20 +110,20 @@ def GoldmanParser(filename: str):
         page = reader.pages[page_num]
         text += page.extract_text()
 
-    # with open("output.txt", "w") as f:
-    #     f.write(text)
-
     _,date_list = text.split("Period Covering ", maxsplit=1)
     date_list,_ = date_list.split("\n", maxsplit=1)
     date_list = date_list.split(" ")
     date_document = date(int(date_list[2].replace(',', '')), calendar[date_list[4]], int(date_list[5].replace(',', '')))
 
+    _,currency = text.split("BASE CURRENCY : ", maxsplit=1)
+    currency,_ = currency.split("\n", maxsplit=1)
+    _,currency = currency.split("(")
+    currency = currency.replace(")", "")
+
     _, portfolios = text.split("PORTFOLIO INFORMATION\n", maxsplit=1)
     portfolios,data = portfolios.split("DUPLICATE COPIES OF THIS ACCOUNT STATEMENT ARE BEING SENT TO:\n", maxsplit=1)
     _,portfolios = portfolios.split("INDIVIDUAL PORTFOLIOS\n")
     portfolios = portfolios.split("\n")
-
-    # portfolios = re.split(r"\d{2,3}", portfolios)
 
     clients: list[str] = []
     portfolio_numbers: dict[str, str] = {}
@@ -116,107 +172,11 @@ def GoldmanParser(filename: str):
         public_eq_result: list[str] = GenerateResultList(public_eq_client)
         fixed_income_result: list[str] = GenerateResultList(fixed_income_client)
 
-        for row in public_eq_result:
-            if "TOTAL" in row:
-                continue
+        public_eq = GenerateResultProduct(public_eq_result, "PUBLIC EQUITY", date_document, client, portfolio_numbers[client], currency)
+        fixed_income = GenerateResultProduct(fixed_income_result, "FIXED INCOME", date_document, client, portfolio_numbers[client], currency)
 
-            row = row.replace(",", "")
-            row_data = row.split(" ")
-            row_data = [x for x in row_data if x != '']
-            row_data = [x.replace('(', '-') for x in row_data]
-            row_data = [x.replace(')', '') for x in row_data]
-
-            if len(row_data) < 8:
-                continue
-
-            try:
-                float(row_data[3])
-                quantity = float(row_data[0])
-                market_price = float(row_data[1])
-                market_value = float(row_data[2])
-                mnemonic = ' '.join([x for x in row_data if re.search(r"[a-zA-Z]", x)])
-            except ValueError:
-                continue
-
-            try:
-                float(row_data[8])
-                accrued_income = float(row_data[3])
-                unit_cost = float(row_data[4])
-                cost_basis = float(row_data[5])
-            except ValueError:
-                accrued_income = 0.0
-                unit_cost = float(row_data[3])
-                cost_basis = float(row_data[4])
-
-            results_public_eq.append({
-                "Fecha": date_document,
-                "Nombre": client,
-                "Rut": "",
-                "Cuenta": portfolio_numbers[client],
-                "Nemotecnico": mnemonic,
-                "Moneda": "",
-                "ISIN": "",
-                "CUSIP": "",
-                "Cantidad": quantity,
-                "Precio_Mercado": market_price,
-                "Valor_Mercado": market_value,
-                "Precio_Compra": unit_cost,
-                "Valor_Compra": cost_basis,
-                "Interes_Acum": accrued_income,
-                "Contraparte": "GOLDMAN SACHS",
-                "Clase_Activo": "PUBLIC EQUITY",
-            })
-        
-        for row in fixed_income_result:
-            if "TOTAL" in row:
-                continue
-
-            row = row.replace(",", "")
-            row = row.replace(")", " ")
-            row = row.replace("(", "-")
-            row_data = row.split(" ")
-            row_data = [x for x in row_data if x != '']
-
-            if len(row_data) < 8:
-                continue
-
-            try:
-                float(row_data[3])
-                quantity = float(row_data[0])
-                market_price = float(row_data[1])
-                market_value = float(row_data[2])
-                mnemonic = ' '.join([x for x in row_data if re.search(r"[a-zA-Z]", x)])
-            except ValueError:
-                continue
-
-            try:
-                float(row_data[8])
-                accrued_income = float(row_data[3])
-                unit_cost = float(row_data[4])
-                cost_basis = float(row_data[5])
-            except ValueError:
-                accrued_income = 0.0
-                unit_cost = float(row_data[3])
-                cost_basis = float(row_data[4])
-
-            results_fixed_income.append({
-                "Fecha": date_document,
-                "Nombre": client,
-                "Rut": "",
-                "Cuenta": portfolio_numbers[client],
-                "Nemotecnico": mnemonic,
-                "Moneda": "",
-                "ISIN": "",
-                "CUSIP": "",
-                "Cantidad": quantity,
-                "Precio_Mercado": market_price,
-                "Valor_Mercado": market_value,
-                "Precio_Compra": unit_cost,
-                "Valor_Compra": cost_basis,
-                "Interes_Acum": accrued_income,
-                "Contraparte": "GOLDMAN SACHS",
-                "Clase_Activo": "FIXED INCOME",
-            })
+        results_public_eq += public_eq
+        results_fixed_income += fixed_income
 
     df = pd.DataFrame(results_public_eq + results_fixed_income)
     df.to_excel(f"./output/{filename}.xlsx", index=False, engine="openpyxl")
