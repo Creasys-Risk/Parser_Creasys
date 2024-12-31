@@ -1,5 +1,6 @@
 import re
 import pandas as pd
+import math
 from datetime import date
 from PyPDF2 import PdfReader
 
@@ -37,13 +38,22 @@ def GenerateResultList(client_info: list[str]) -> list[str]:
         for index, aux in enumerate(client_list):
             if "Period Ended" in aux:
                 aux,_ = aux.split("Period Ended")
-            if re.search(r"\d[.]", aux):
-                if re.search(r"[a-zA-Z]", aux):
-                    client_result.append(aux)
-                elif index+1 < len(client_list):
-                    client_list[index+1] = aux + ' ' + client_list[index+1]
+            if aux == "":
+                continue
+            if re.match(r"\d", aux[0]) and "%" not in aux:
+                client_result.append(aux)
+            elif re.search(r"[a-zA-Z]", aux) and re.search(r"\d", aux) and len(client_result) > 0:
+                client_result[-1] += " " + aux
 
-    return client_result
+    client_result_concat = []
+
+    for index, data in enumerate(client_result):
+        if not re.search(r"[a-zA-Z]", data) and index+1 < len(client_result):
+            client_result[index+1] = data + " " + client_result[index+1]
+        else:
+            client_result_concat.append(data)
+
+    return client_result_concat
 
 def GenerateResultProduct(client_result: list[str], product_name: str, date_document: date, client: str, portfolio_number: str, currency: str) -> list[dict]:
     results_product = []
@@ -52,13 +62,20 @@ def GenerateResultProduct(client_result: list[str], product_name: str, date_docu
         if "TOTAL" in row:
             continue
 
+        try:
+            first_letter_index = next(i for i, char in enumerate(row) if char.isalpha())
+        except StopIteration:
+            continue
+        
+        mnemonic = row[first_letter_index:]
+        row = row[:first_letter_index]
         row = row.replace(",", "")
         row = row.replace(")", " ")
         row = row.replace("(", "-")
         row_data = row.split(" ")
         row_data = [x for x in row_data if x != '']
 
-        if len(row_data) < 8:
+        if len(row_data) < 6:
             continue
 
         try:
@@ -66,19 +83,17 @@ def GenerateResultProduct(client_result: list[str], product_name: str, date_docu
             quantity = float(row_data[0])
             market_price = float(row_data[1])
             market_value = float(row_data[2])
-            mnemonic = ' '.join([x for x in row_data if re.search(r"[a-zA-Z]", x)])
         except ValueError:
             continue
 
-        try:
-            float(row_data[8])
-            accrued_income = float(row_data[3])
-            unit_cost = float(row_data[4])
-            cost_basis = float(row_data[5])
-        except ValueError:
+        if math.isclose(round(quantity*float(row_data[3])),round(float(row_data[4])), rel_tol=1e-2) or math.isclose(round(quantity*float(row_data[3])/100), round(float(row_data[4])), rel_tol=1e-2):
             accrued_income = 0.0
             unit_cost = float(row_data[3])
             cost_basis = float(row_data[4])
+        else:
+            accrued_income = float(row_data[3])
+            unit_cost = float(row_data[4])
+            cost_basis = float(row_data[5])
 
         results_product.append({
             "Fecha": date_document,
@@ -139,6 +154,8 @@ def GoldmanParser(filename: str):
                     clients.append(client_name)
                 else:
                     portfolio_number += aux
+                    if " " in portfolio_number:
+                        portfolio_number,_ = portfolio_number.split(" ")
                     portfolio_numbers[client_name] = portfolio_number
 
     results_public_eq = []
@@ -165,6 +182,7 @@ def GoldmanParser(filename: str):
 
         public_eq_client: list[str] = client_text.split("PUBLIC EQUITY")
         fixed_income_client: list[str] = client_text.split("FIXED INCOME")
+        # TODO: Agrega "CASH, DEPOSITS & MONEY MARKET FUNDS"
 
         del public_eq_client[0]
         del fixed_income_client[0]
@@ -187,6 +205,7 @@ if __name__ == '__main__':
     files = os.listdir("./input")
 
     for file in files:
-        if ".pdf" in file:
-            filename,_ = file.split('.')
-            GoldmanParser(filename)
+        if file == '.gitkeep':
+            continue
+        filename,_ = file.split('.')
+        GoldmanParser(filename)
