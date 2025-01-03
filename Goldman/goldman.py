@@ -25,6 +25,9 @@ def GenerateResultList(client_info: list[str]) -> list[str]:
         if "TOTAL PORTFOLIO" in client_data:
             client_data,_ = client_data.split("TOTAL", maxsplit=1)
 
+        if "FIXED INCOME" in client_data:
+            client_data,_ = client_data.split("FIXED INCOME", maxsplit=1)
+
         if "in PercentageEstimated" not in client_data and "Annual Income" not in client_data:
             continue
 
@@ -160,6 +163,7 @@ def GoldmanParser(filename: str):
 
     results_public_eq = []
     results_fixed_income = []
+    results_cash_deposits = []
 
     for client in clients:
         client_data = data.split(client)
@@ -182,21 +186,25 @@ def GoldmanParser(filename: str):
 
         public_eq_client: list[str] = client_text.split("PUBLIC EQUITY")
         fixed_income_client: list[str] = client_text.split("FIXED INCOME")
-        # TODO: Agrega "CASH, DEPOSITS & MONEY MARKET FUNDS"
+        cash_deposits_client: list[str] = client_text.split("CASH, DEPOSITS & MONEY MARKET FUNDS")
 
         del public_eq_client[0]
         del fixed_income_client[0]
+        del cash_deposits_client[0]
         
         public_eq_result: list[str] = GenerateResultList(public_eq_client)
         fixed_income_result: list[str] = GenerateResultList(fixed_income_client)
+        cash_deposits_result: list[str] = GenerateResultList(cash_deposits_client)
 
         public_eq = GenerateResultProduct(public_eq_result, "PUBLIC EQUITY", date_document, client, portfolio_numbers[client], currency)
         fixed_income = GenerateResultProduct(fixed_income_result, "FIXED INCOME", date_document, client, portfolio_numbers[client], currency)
+        cash_deposits = GenerateResultProduct(cash_deposits_result, "CASH, DEPOSITS & MONEY MARKET FUNDS", date_document, client, portfolio_numbers[client], currency)
 
         results_public_eq += public_eq
         results_fixed_income += fixed_income
+        results_cash_deposits += cash_deposits
 
-    df = pd.DataFrame(results_public_eq + results_fixed_income)
+    df = pd.DataFrame(results_public_eq + results_fixed_income + results_cash_deposits)
     df.to_excel(f"./output/{filename}.xlsx", index=False, engine="openpyxl")
 
 if __name__ == '__main__':
