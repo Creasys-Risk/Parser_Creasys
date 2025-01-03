@@ -2,27 +2,6 @@ import re
 import pandas as pd
 from PyPDF2 import PdfReader
 
-def Extract_Data(rows: list[str]) -> list[dict]:
-    results = []
-    for row in rows:
-        row_data = row.split(" ")
-        row_data = [x for x in row_data if x != '' and x != ')']
-        row_data = [x.replace('(', '-') for x in row_data]
-        
-        price = float(row_data[0].replace(',', ''))
-        quantity = float(row_data[1].replace(',', ''))
-        value = float(row_data[2].replace(',', ''))
-        nemotecnico = f"{row_data[-2]} {row_data[-1]}"
-        results.append({
-            "mnemonic": nemotecnico,
-            "quantity": quantity,
-            "market_price": price,
-            "market_value": value,
-            "accrued_income": 0.0,
-        })
-
-    return results
-
 def Extract_Equity(text: str, filename: str) -> list[dict]:
     if "Equity Detail\n" not in text:
         print(f"No se encontró información de Equity en el archivo: {filename}.pdf")
@@ -43,7 +22,23 @@ def Extract_Equity(text: str, filename: str) -> list[dict]:
                 row = line + " " + lines[index+1] if '-' in lines[index+1] else line + " " + lines[index+2]
                 equity_rows.append(row)
 
-    results = Extract_Data(equity_rows)
+    results = []
+    for row in equity_rows:
+        row_data = row.split(" ")
+        row_data = [x for x in row_data if x != '' and x != ')']
+        row_data = [x.replace('(', '-') for x in row_data]
+        
+        price = float(row_data[0].replace(',', ''))
+        quantity = float(row_data[1].replace(',', ''))
+        value = float(row_data[2].replace(',', ''))
+        nemotecnico = f"{row_data[-2]} {row_data[-1]}"
+        results.append({
+            "mnemonic": nemotecnico,
+            "quantity": quantity,
+            "market_price": price,
+            "market_value": value,
+            "accrued_income": 0.0,
+        })
 
     return results
 
@@ -72,6 +67,7 @@ def Extract_Fixed_Income(text: str, filename: str) -> list[dict]:
             row += f" {line}"
         fixed_income_rows.append(row)
 
+    results = []
     for row in fixed_income_rows:
         row_data = row.replace(f"{' '*6}", ";")
         row_data = row_data.split(";")
@@ -79,11 +75,40 @@ def Extract_Fixed_Income(text: str, filename: str) -> list[dict]:
         row_data = [x.replace('(', '-') for x in row_data]
         row_data = [x.replace(' )', '') for x in row_data]
 
-        print(row_data)
+        price = float(row_data[0].replace(',', '').replace(' ', ''))
+        quantity = float(row_data[1].replace(',', '').replace(' ', ''))
+        value = float(row_data[2].replace(',', '').replace(' ', ''))
 
-    # results = Extract_Data(fixed_income_rows)
+        if re.search(r"[a-zA-Z]", row_data[4]):
+            first_letter_index = next(i for i, char in enumerate(row_data[4]) if char.isalpha())
+            nemotecnico = f"{row_data[4][first_letter_index:]}"
+            unrealized_gain_loss = float(row_data[4][:first_letter_index].replace(',', '').replace(' ', ''))
+            annual_income = 0.0
+            annual_yield = 0.0
+            accrued_interest = 0.0
+        else:
+            unrealized_gain_loss = float(row_data[4].replace(',', '').replace(' ', ''))
 
-    # return results
+            aux = row_data[5].split(" ")
+            aux = [x for x in aux if x != '']
+            annual_income = aux[0]
+            annual_yield = aux[1]
+            nemotecnico = " ".join(aux[2:])
+
+            aux_2 = row_data[6].split(" ")
+            aux_2 = [x for x in aux_2 if x != '']
+            accrued_interest = float(aux_2[0].replace(',', '').replace(' ', ''))
+            nemotecnico += " " + " ".join(aux_2[1:])
+
+        results.append({
+            "mnemonic": nemotecnico,
+            "quantity": quantity,
+            "market_price": price,
+            "market_value": value,
+            "accrued_income": accrued_interest,
+        })
+
+    return results
 
 def JPM_Parser(filename: str):
     reader = PdfReader(f"./input/{filename}.pdf")
@@ -100,7 +125,7 @@ def JPM_Parser(filename: str):
     results_equity = Extract_Equity(text, filename)
     results_fixed_income = Extract_Fixed_Income(text, filename)
 
-    df = pd.DataFrame(results_equity)
+    df = pd.DataFrame(results_equity + results_fixed_income)
     df.to_excel(f"./output/{filename}.xlsx", index=False, engine="openpyxl")
 
 if __name__ == "__main__":
@@ -112,6 +137,4 @@ if __name__ == "__main__":
         if file == ".gitkeep":
             continue
         filename,_ = file.split('.')
-        # JPM_Parser(filename)
-
-    JPM_Parser("20160831 GB (JPM W22161009)")
+        JPM_Parser(filename)
