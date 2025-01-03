@@ -157,10 +157,12 @@ def GoldmanParser(filename: str):
                     clients.append(client_name)
                 else:
                     portfolio_number += aux
-                    if " " in portfolio_number:
-                        portfolio_number,_ = portfolio_number.split(" ")
                     portfolio_numbers[client_name] = portfolio_number
 
+    for k in portfolio_numbers:
+        if " " in portfolio_numbers[k]:
+            portfolio_numbers[k],_ = portfolio_numbers[k].split(" ")
+    
     results_public_eq = []
     results_fixed_income = []
     results_cash_deposits = []
