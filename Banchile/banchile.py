@@ -3,7 +3,7 @@ from PyPDF2 import PdfReader
 import pandas as pd
 import datetime
 
-def extract_data(type_data: str, text: str, filename: str) -> list[dict]:
+def extract_data(type_data: str, text: str, filename: str, fecha: datetime.date, cuenta: str, nombre: str) -> list[dict]:
     if type_data not in text:
         print(f"No se encontró información de {type_data} en el archivo: {filename}.pdf")
         return[]
@@ -42,10 +42,10 @@ def extract_data(type_data: str, text: str, filename: str) -> list[dict]:
                     precio_compra = float(d[-6].replace(".","").replace(",","."))
                     valor_compra = float(d[-5].replace(".","").replace(",","."))
                     info.append({
-                        "Fecha": "",
-                        "Nombre": "",
+                        "Fecha": fecha,
+                        "Nombre": nombre,
                         "Rut": "",
-                        "Cuenta": "",
+                        "Cuenta": cuenta,
                         "Nemotecnico": nemo,
                         "Moneda": moneda,
                         "ISIN": "",
@@ -57,12 +57,12 @@ def extract_data(type_data: str, text: str, filename: str) -> list[dict]:
                         "Valor_Compra": valor_compra,
                         "Interes_Acum": "",
                         "Contraparte": "",
-                        "Clase_Activo": f"{type_data.title()}; {sub_instrumento.title()}",
+                        "Clase_Activo": f"{sub_instrumento.upper()}",
                     })
 
     return info
 
-def BanChile_Parser(filename: str):
+def BanChile_Parser(filename: str) -> list[dict]:
     reader = PdfReader(f"./input/{filename}.pdf")
 
     text_full = ''
@@ -99,24 +99,25 @@ def BanChile_Parser(filename: str):
         cuenta = cuenta.split("\n")[-1]
         cuenta = [int(num) for num in re.findall(r'\d+', cuenta)][0]
 
-        data+= extract_data("FONDOS MUTUOS", text, filename)
-        data+= extract_data("RENTA FIJA", text, filename)
-        data+= extract_data("RENTA VARIABLE", text, filename)
-        data+= extract_data("OTRAS INVERSIONES", text, filename)
+        data+= extract_data("FONDOS MUTUOS", text, filename, fecha, cuenta, nombre)
+        data+= extract_data("RENTA FIJA", text, filename, fecha, cuenta, nombre)
+        data+= extract_data("RENTA VARIABLE", text, filename, fecha, cuenta, nombre)
+        data+= extract_data("OTRAS INVERSIONES", text, filename, fecha, cuenta, nombre)
 
-    df = pd.DataFrame(data)
-    df = df.assign(Fecha=fecha)
-    df = df.assign(Cuenta=cuenta)
-    df = df.assign(Nombre=nombre)
-    df.to_excel(f"./output/{filename}.xlsx", index=False, engine="openpyxl")
+    return data
 
 if __name__ == "__main__":
     import os
 
     files = os.listdir("./input")
+    data = []
 
     for file in files:
         if file == ".gitkeep":
             continue
         filename,_ = file.split('.')
-        BanChile_Parser(filename)
+        data += BanChile_Parser(filename)
+    
+    date: datetime.date = data[0]["Fecha"]
+    df = pd.DataFrame(data)
+    df.to_excel(f"./output/Informe_{date.strftime("%Y%m%d")}.xlsx", index=False, engine="openpyxl")
