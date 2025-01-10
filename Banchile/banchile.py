@@ -34,13 +34,24 @@ def extract_data(type_data: str, text: str, filename: str, fecha: datetime.date,
                     continue
                 for d in aux[2:-1]:
                     d = d.split(" ")
-                    nemo = " ".join(d[1:-7])
-                    moneda = d[-2]
-                    cantidad = float(d[-7].replace(".","").replace(",","."))
-                    precio_mercado = float(d[-4].replace(".","").replace(",","."))
-                    valor_mercado = float(d[-3].replace(".","").replace(",","."))
-                    precio_compra = float(d[-6].replace(".","").replace(",","."))
-                    valor_compra = float(d[-5].replace(".","").replace(",","."))
+                    if type_data == "RENTA FIJA":
+                        nemo = " ".join(d[0:-12])
+                        moneda = d[-2]
+                        cantidad = float(d[-8].replace(".","").replace(",","."))
+                        precio_mercado = float(d[-5].replace(".","").replace(",","."))
+                        valor_mercado = float(d[-4].replace(".","").replace(",","."))
+                        precio_compra = float(d[-7].replace(".","").replace(",","."))
+                        valor_compra = float(d[-6].replace(".","").replace(",","."))
+                        cusip = d[-9]
+                    else:
+                        nemo = " ".join(d[1:-7])
+                        moneda = d[-2]
+                        cantidad = float(d[-7].replace(".","").replace(",","."))
+                        precio_mercado = float(d[-4].replace(".","").replace(",","."))
+                        valor_mercado = float(d[-3].replace(".","").replace(",","."))
+                        precio_compra = float(d[-6].replace(".","").replace(",","."))
+                        valor_compra = float(d[-5].replace(".","").replace(",","."))
+                        cusip = ""
                     info.append({
                         "Fecha": fecha,
                         "Nombre": nombre,
@@ -49,14 +60,14 @@ def extract_data(type_data: str, text: str, filename: str, fecha: datetime.date,
                         "Nemotecnico": nemo,
                         "Moneda": moneda,
                         "ISIN": "",
-                        "CUSIP": "",
+                        "CUSIP": cusip,
                         "Cantidad": cantidad,
                         "Precio_Mercado": precio_mercado,
                         "Valor_Mercado": valor_mercado,
                         "Precio_Compra": precio_compra,
                         "Valor_Compra": valor_compra,
                         "Interes_Acum": "",
-                        "Contraparte": "",
+                        "Contraparte": "BANCHILE",
                         "Clase_Activo": f"{sub_instrumento.upper()}",
                     })
 
