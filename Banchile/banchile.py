@@ -3,7 +3,7 @@ from PyPDF2 import PdfReader
 import pandas as pd
 import datetime
 
-def extract_data(type_data: str, text: str, filename: str, fecha: datetime.date, cuenta: str, nombre: str) -> list[dict]:
+def extract_data_portfolio(type_data: str, text: str, filename: str, fecha: datetime.date, cuenta: str, nombre: str) -> list[dict]:
     if type_data not in text:
         print(f"No se encontró información de {type_data} en el archivo: {filename}.pdf")
         return[]
@@ -73,7 +73,83 @@ def extract_data(type_data: str, text: str, filename: str, fecha: datetime.date,
 
     return info
 
-def BanChile_Parser(filename: str) -> list[dict]:
+def extract_data_movement(text: str, filename: str, fecha: datetime.date, cuenta: str, nombre: str) -> list[dict]:
+    _,data = text.split("CUENTA CORRIENTE ")
+    data,_ = data.split("*", maxsplit=1)
+    data = data.split("\n")
+
+    if data[1] == '00/00/0000 0,0000':
+        print(f"No se encontró información de movimientos en el archivo: {filename}.pdf")
+        return []
+
+    info = []
+    for d in data[1:-1]:
+        aux = d.split(" ")
+        instrumento=aux.pop(0)
+        
+        emisor = ""
+        index_aux = 0
+        for i,c in enumerate(aux):
+            if "/" in c:
+                index_aux = i
+                break
+            else:
+                emisor += f"{c} "
+        
+        aux = aux[index_aux:]
+        fecha_liquidacion = datetime.datetime.strptime(aux.pop(0), "%d/%m/%Y").date() 
+        
+        movimiento = ""
+        index_aux = 0
+        for i,c in enumerate(aux):
+            if "/" in c:
+                index_aux = i
+                break
+            else:
+                movimiento += f"{c} "
+
+        aux = aux[index_aux:]
+        fecha_movimiento = datetime.datetime.strptime(aux.pop(0), "%d/%m/%Y").date() 
+        monto = float(aux[0].replace(".","").replace(",","."))
+
+        if len(aux) == 5:
+            precio = float(aux[1].replace(".","").replace(",","."))
+            moneda = aux[2]
+            unidades = float(aux[3].replace(".","").replace(",","."))
+            saldo = float(aux[4].replace(".","").replace(",","."))
+            concepto = "OPERACION"
+        else:
+            precio = ""
+            moneda = aux[1]
+            unidades = float(aux[2].replace(".","").replace(",","."))
+            saldo = float(aux[3].replace(".","").replace(",","."))
+            concepto = "MOVIMIENTO"
+
+        info.append({
+            "Fecha Movimiento": fecha_movimiento,
+            "Fecha Liquidación": fecha_liquidacion,
+            "Nombre": nombre,
+            "RUT": "",
+            "Cuenta": cuenta,
+            "Nemotecnico": instrumento,
+            "Moneda": moneda,
+            "ISIN": "",
+            "CUSIP": "",
+            "Cantidad": unidades,
+            "Precio": precio,
+            "Monto": monto,
+            "Comision": 0,
+            "IVA": 0,
+            "Tipo": movimiento,
+            "Descripcion": movimiento,
+            "Concepto": concepto,
+            "Folio": "",
+            "Contraparte": "BANCHILE",
+        })
+
+    return info
+
+def BanChile_Parser(filename: str) -> tuple[list[dict], list[dict]]:
     reader = PdfReader(f"./input/{filename}.pdf")
 
     text_full = ''
@@ -85,7 +161,8 @@ def BanChile_Parser(filename: str) -> list[dict]:
     with open("output_banchile.txt", "w", encoding="utf-8") as f:
         f.write(text_full)
 
-    data = []
+    data_cartera = []
+    data_movimientos = []
     text_full = text_full.split("Período del Estado de Cuenta:")
 
     for text in text_full[1:]:
@@ -110,25 +187,33 @@ def BanChile_Parser(filename: str) -> list[dict]:
         cuenta = cuenta.split("\n")[-1]
         cuenta = [int(num) for num in re.findall(r'\d+', cuenta)][0]
 
-        data+= extract_data("FONDOS MUTUOS", text, filename, fecha, cuenta, nombre)
-        data+= extract_data("RENTA FIJA", text, filename, fecha, cuenta, nombre)
-        data+= extract_data("RENTA VARIABLE", text, filename, fecha, cuenta, nombre)
-        data+= extract_data("OTRAS INVERSIONES", text, filename, fecha, cuenta, nombre)
+        data_cartera+= extract_data_portfolio("FONDOS MUTUOS", text, filename, fecha, cuenta, nombre)
+        data_cartera+= extract_data_portfolio("RENTA FIJA", text, filename, fecha, cuenta, nombre)
+        data_cartera+= extract_data_portfolio("RENTA VARIABLE", text, filename, fecha, cuenta, nombre)
+        data_cartera+= extract_data_portfolio("OTRAS INVERSIONES", text, filename, fecha, cuenta, nombre)
+        data_movimientos = extract_data_movement(text, filename, fecha, cuenta, nombre)
 
-    return data
+    return (data_cartera, data_movimientos)
 
 if __name__ == "__main__":
     import os
 
     files = os.listdir("./input")
-    data = []
+    data_cartera = []
+    data_movimientos = []
 
     for file in files:
         if file == ".gitkeep":
             continue
         filename,_ = file.split('.')
-        data += BanChile_Parser(filename)
-    
-    date: datetime.date = data[0]["Fecha"]
-    df = pd.DataFrame(data)
-    df.to_excel(f"./output/Informe_{date.strftime("%Y%m%d")}.xlsx", index=False, engine="openpyxl")
+        cartera, movimientos = BanChile_Parser(filename)
+        data_cartera += cartera
+        data_movimientos += movimientos
+        
+    date: datetime.date = data_cartera[0]["Fecha"]
+    df_cartera = pd.DataFrame(data_cartera)
+    df_movimientos = pd.DataFrame(data_movimientos)
+
+    with pd.ExcelWriter(f"./output/Informe_{date.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+        df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
+        df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
