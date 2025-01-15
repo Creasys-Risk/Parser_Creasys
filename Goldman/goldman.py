@@ -43,9 +43,11 @@ def GenerateResultList(client_info: list[str]) -> list[str]:
                 aux,_ = aux.split("Period Ended")
             if aux == "":
                 continue
-            if re.match(r"\d", aux[0]) and "%" not in aux:
+            if (re.match(r"\d", aux[0]) or (aux[0] == '(' and re.match(r"\d", aux[1]))) and "%" not in aux:
                 client_result.append(aux)
             elif re.search(r"[a-zA-Z]", aux) and re.search(r"\d", aux) and len(client_result) > 0:
+                if re.search(r'\([A-Z]*\)', client_result[-1]) and re.search(r'\([A-Z]*\)', aux):
+                    continue
                 client_result[-1] += " " + aux
 
     client_result_concat = []
@@ -53,6 +55,8 @@ def GenerateResultList(client_info: list[str]) -> list[str]:
     for index, data in enumerate(client_result):
         if not re.search(r"[a-zA-Z]", data) and index+1 < len(client_result):
             client_result[index+1] = data + " " + client_result[index+1]
+        elif not " " in data and len(client_result_concat) > 0:
+            client_result_concat[-1] += " " + data
         else:
             client_result_concat.append(data)
 
@@ -127,6 +131,9 @@ def GoldmanParser(filename: str):
     for page_num in range(len(reader.pages)):
         page = reader.pages[page_num]
         text += page.extract_text()
+
+    # with open("output_Goldman_Sachs.txt", "w") as f:
+    #     f.write(text)
 
     _,date_list = text.split("Period Covering ", maxsplit=1)
     date_list,_ = date_list.split("\n", maxsplit=1)
