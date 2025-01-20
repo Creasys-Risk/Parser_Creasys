@@ -1,11 +1,12 @@
+import datetime
 import re
 import pandas as pd
 from PyPDF2 import PdfReader
 
-def Extract_Equity(text: str, filename: str) -> list[dict]:
+def Extract_Equity(text: str, filename: str, account: str, date: datetime.date) -> list[dict]:
     if "Equity Detail\n" not in text:
         print(f"No se encontró información de Equity en el archivo: {filename}.pdf")
-        return [{}]
+        return []
 
     _,data = text.split("Equity Detail\n")
 
@@ -32,20 +33,32 @@ def Extract_Equity(text: str, filename: str) -> list[dict]:
         quantity = float(row_data[1].replace(',', ''))
         value = float(row_data[2].replace(',', ''))
         nemotecnico = f"{row_data[-2]} {row_data[-1]}"
+
         results.append({
-            "mnemonic": nemotecnico,
-            "quantity": quantity,
-            "market_price": price,
-            "market_value": value,
-            "accrued_income": 0.0,
+            "Fecha": date,
+            "Nombre": "",
+            "Rut": "",
+            "Cuenta": account,
+            "Nemotecnico": nemotecnico,
+            "Moneda": "USD",
+            "ISIN": "",
+            "CUSIP": "",
+            "Cantidad": quantity,
+            "Precio_Mercado": price,
+            "Valor_Mercado": value,
+            "Precio_Compra": "",
+            "Valor_Compra": "",
+            "Interes_Acum": 0,
+            "Contraparte": "JP MORGAN",
+            "Clase_Activo": "EQUITY",
         })
 
     return results
 
-def Extract_Fixed_Income(text: str, filename: str) -> list[dict]:
+def Extract_Fixed_Income(text: str, filename: str, account: str, date: datetime.date) -> list[dict]:
     if "Cash & Fixed Income Detail" not in text:
         print(f"No se encontró información de Fixed Income en el archivo: {filename}.pdf")
-        return [{}]
+        return []
     
     _,data = text.split("Cash & Fixed Income Detail")
 
@@ -102,11 +115,22 @@ def Extract_Fixed_Income(text: str, filename: str) -> list[dict]:
             nemotecnico += " " + " ".join(aux_2[1:])
 
         results.append({
-            "mnemonic": nemotecnico,
-            "quantity": quantity,
-            "market_price": price,
-            "market_value": value,
-            "accrued_income": accrued_interest,
+            "Fecha": date,
+            "Nombre": "",
+            "Rut": "",
+            "Cuenta": account,
+            "Nemotecnico": nemotecnico,
+            "Moneda": "USD",
+            "ISIN": "",
+            "CUSIP": "",
+            "Cantidad": quantity,
+            "Precio_Mercado": price,
+            "Valor_Mercado": value,
+            "Precio_Compra": "",
+            "Valor_Compra": "",
+            "Interes_Acum": accrued_interest,
+            "Contraparte": "JP MORGAN",
+            "Clase_Activo": "FIXED INCOME",
         })
 
     return results
@@ -123,11 +147,36 @@ def JPM_Parser(filename: str):
     with open("output_jp_morgan.txt", "w", encoding="UTF-8") as f:
         f.write(text)
 
-    results_equity = Extract_Equity(text, filename)
-    results_fixed_income = Extract_Fixed_Income(text, filename)
+    if "ACCT." in text:
+        _,account = text.split("ACCT. ", maxsplit=1)
+        account,_ = account.split("\n", maxsplit=1)
+    elif "Primary Account:" in text:
+        _,account = text.split("Primary Account: ", maxsplit=1)
+        account,_ = account.split("\n", maxsplit=1)
+    else:
+        _,account = text.split("²", maxsplit=1)
+        account,_ = account.split("\n", maxsplit=1)
 
-    df = pd.DataFrame(results_equity + results_fixed_income)
-    df.to_excel(f"./output/{filename}.xlsx", index=False, engine="openpyxl")
+    _,date_aux = text.split("For the Period ", maxsplit=1)
+    date_aux,_ = date_aux.split("\n", maxsplit=1)
+    date_aux = date_aux.split(" ")
+    date_aux = date_aux[2]
+
+    month,day,year = date_aux.split("/")
+    day = int(day)
+    month = int(month)
+    year = int(f"20{year}")
+
+    date = datetime.date(year, month, day)
+
+    results_equity = Extract_Equity(text, filename, account, date)
+    results_fixed_income = Extract_Fixed_Income(text, filename, account, date)
+
+    results = results_equity + results_fixed_income
+
+    if len(results) > 0:
+        df = pd.DataFrame(results_equity + results_fixed_income)
+        df.to_excel(f"./output/{filename}.xlsx", index=False, engine="openpyxl")
 
 if __name__ == "__main__":
     import os
