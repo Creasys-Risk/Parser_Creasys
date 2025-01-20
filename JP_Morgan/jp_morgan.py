@@ -59,9 +59,10 @@ def Extract_Fixed_Income(text: str, filename: str) -> list[dict]:
         row = ""
         for line in lines:
             if "Fixed Income" in line:
-                _,line = line.split("Fixed Income")
+                aux = line.split("Fixed Income")
+                line = aux[-1]
             if re.match(r'^\s{9}', line):
-                if "This is the Annual Percentage Yield" not in row and "For the Period" not in row and "Page" not in row and "Price Quantity Value Average Cost" not in row:
+                if "This is the Annual Percentage Yield" not in row and "For the Period" not in row and "Page" not in row and "Price Quantity Value" not in row and "$" not in row:
                     fixed_income_rows.append(row)
                 row = ""
             row += f" {line}"
@@ -119,7 +120,7 @@ def JPM_Parser(filename: str):
         page = reader.pages[page_num]
         text += page.extract_text()
 
-    with open("output_jp_morgan.txt", "w") as f:
+    with open("output_jp_morgan.txt", "w", encoding="UTF-8") as f:
         f.write(text)
 
     results_equity = Extract_Equity(text, filename)
@@ -136,5 +137,5 @@ if __name__ == "__main__":
     for file in files:
         if file == ".gitkeep":
             continue
-        filename,_ = file.split('.')
+        filename,_ = file.split('.pdf')
         JPM_Parser(filename)
