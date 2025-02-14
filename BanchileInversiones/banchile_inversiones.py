@@ -470,6 +470,9 @@ def BanChile_Parser(filename):
 
 if __name__ == "__main__":
     os.makedirs(folder_output, exist_ok=True)
+    all_cartera = []
+    all_movimientos = []
+    
     for file in os.listdir(folder_input):
         if not file.lower().endswith(".pdf"):
             continue
@@ -477,17 +480,54 @@ if __name__ == "__main__":
         print(f"Procesando {filename_noext}...")
         try:
             cartera, movimientos, nombre = BanChile_Parser(filename_noext)
-            if cartera or movimientos:
-                output_path = os.path.join(folder_output, f"{nombre}_Informe.xlsx")
-                with pd.ExcelWriter(output_path) as writer:
-                    if cartera:
-                        pd.DataFrame(cartera).to_excel(writer, index=False, sheet_name="Cartera")
-                    if movimientos:
-                        pd.DataFrame(movimientos).to_excel(writer, index=False, sheet_name="Movimientos")
-                print(f"Archivo generado: {output_path}")
-                print(f"Registros cartera: {len(cartera)}")
-                print(f"Registros movimientos: {len(movimientos)}")
-            else:
-                print(f"Sin datos en {filename_noext}")
+            if cartera:
+                all_cartera.extend(cartera)
+            if movimientos:
+                all_movimientos.extend(movimientos)
         except Exception as e:
             print(f"Error procesando {file}: {str(e)}")
+    
+    if all_cartera or all_movimientos:
+        today = datetime.datetime.now().strftime("%Y%m%d")
+        output_path = os.path.join(folder_output, f"Informe_{today}.xlsx")
+        
+        with pd.ExcelWriter(output_path) as writer:
+            if all_cartera:
+                df_cartera = pd.DataFrame(all_cartera)
+                df_cartera.sort_values(by=["Nombre", "Cuenta"], inplace=True)
+                
+                # Insertar espacios entre clientes
+                df_cartera_con_espacios = pd.DataFrame()
+                for nombre_cliente, grupo in df_cartera.groupby("Nombre", sort=False):
+                    df_cartera_con_espacios = pd.concat([
+                        df_cartera_con_espacios, 
+                        grupo,
+                        pd.DataFrame([{col: "" for col in df_cartera.columns}])  # Fila vacía
+                    ])
+                
+                # Eliminar última fila vacía
+                df_cartera_con_espacios = df_cartera_con_espacios.iloc[:-1]
+                df_cartera_con_espacios.to_excel(writer, index=False, sheet_name="Cartera")
+            
+            if all_movimientos:
+                df_movimientos = pd.DataFrame(all_movimientos)
+                df_movimientos.sort_values(by=["Nombre", "Fecha Liquidación"], inplace=True)
+                
+                # Insertar espacios entre clientes
+                df_movimientos_con_espacios = pd.DataFrame()
+                for nombre_cliente, grupo in df_movimientos.groupby("Nombre", sort=False):
+                    df_movimientos_con_espacios = pd.concat([
+                        df_movimientos_con_espacios, 
+                        grupo,
+                        pd.DataFrame([{col: "" for col in df_movimientos.columns}])  # Fila vacía
+                    ])
+                
+                # Eliminar última fila vacía
+                df_movimientos_con_espacios = df_movimientos_con_espacios.iloc[:-1]
+                df_movimientos_con_espacios.to_excel(writer, index=False, sheet_name="Movimientos")
+        
+        print(f"\nInforme generado exitosamente: {output_path}")
+        print(f"Total registros cartera: {len(all_cartera)}")
+        print(f"Total registros movimientos: {len(all_movimientos)}")
+    else:
+        print("\nNo se encontraron datos para generar el informe")
