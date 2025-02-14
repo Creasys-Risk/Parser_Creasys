@@ -496,16 +496,14 @@ if __name__ == "__main__":
                 df_cartera = pd.DataFrame(all_cartera)
                 df_cartera.sort_values(by=["Nombre", "Cuenta"], inplace=True)
                 
-                # Insertar espacios entre clientes
                 df_cartera_con_espacios = pd.DataFrame()
                 for nombre_cliente, grupo in df_cartera.groupby("Nombre", sort=False):
                     df_cartera_con_espacios = pd.concat([
                         df_cartera_con_espacios, 
                         grupo,
-                        pd.DataFrame([{col: "" for col in df_cartera.columns}])  # Fila vacía
+                        pd.DataFrame([{col: "" for col in df_cartera.columns}]) 
                     ])
                 
-                # Eliminar última fila vacía
                 df_cartera_con_espacios = df_cartera_con_espacios.iloc[:-1]
                 df_cartera_con_espacios.to_excel(writer, index=False, sheet_name="Cartera")
             
@@ -513,16 +511,14 @@ if __name__ == "__main__":
                 df_movimientos = pd.DataFrame(all_movimientos)
                 df_movimientos.sort_values(by=["Nombre", "Fecha Liquidación"], inplace=True)
                 
-                # Insertar espacios entre clientes
                 df_movimientos_con_espacios = pd.DataFrame()
                 for nombre_cliente, grupo in df_movimientos.groupby("Nombre", sort=False):
                     df_movimientos_con_espacios = pd.concat([
                         df_movimientos_con_espacios, 
                         grupo,
-                        pd.DataFrame([{col: "" for col in df_movimientos.columns}])  # Fila vacía
+                        pd.DataFrame([{col: "" for col in df_movimientos.columns}]) 
                     ])
                 
-                # Eliminar última fila vacía
                 df_movimientos_con_espacios = df_movimientos_con_espacios.iloc[:-1]
                 df_movimientos_con_espacios.to_excel(writer, index=False, sheet_name="Movimientos")
         
