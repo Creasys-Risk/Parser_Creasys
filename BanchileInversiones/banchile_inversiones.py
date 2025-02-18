@@ -19,13 +19,12 @@ def parse_number(num_str, is_percentage=False):
     try:
         if not num_str:
             return None
-        if is_percentage:
-            num_str = num_str.replace("%", "").strip()
+        num_str = num_str.replace("%", "").strip()
         s = num_str.replace(".", "").replace(",", ".")
         val = float(s)
-        return f"{abs(val):.2f}%".replace(".", ",") if is_percentage else val
+        return val
     except:
-        return 0.0 if not is_percentage else "0,00%"
+        return 0.0
 
 def extract_text_from_pdf(file_path, pass_key):
     reader = PdfReader(file_path)
@@ -189,8 +188,8 @@ def BanChile_Parser(filename):
                 if m_uf:
                     cantidad = parse_number(m_uf.group("cantidad"))
                     valor_compra = parse_number(m_uf.group("valor_compra"))
-                    precio_compra = parse_number(m_uf.group("t_compra"), is_percentage=True)
-                    precio_mercado = parse_number(m_uf.group("t_mercado"), is_percentage=True)
+                    precio_compra = parse_number(m_uf.group("t_compra"), True)
+                    precio_mercado = parse_number(m_uf.group("t_mercado"), True)
                     valor_mercado = parse_number(m_uf.group("valor_mercado"))
                     j = i + 1
                     nemo_lines = []
@@ -235,9 +234,9 @@ def BanChile_Parser(filename):
                         "ISIN": "",
                         "CUSIP": "",
                         "Cantidad": parse_number(m_clp.group("valor_nominal")),
-                        "Precio_Compra": parse_number(m_clp.group("t_compra"), is_percentage=True),
+                        "Precio_Compra": parse_number(m_clp.group("t_compra"), True),
                         "Valor_Compra": parse_number(m_clp.group("monto_inicio")),
-                        "Precio_Mercado": parse_number(m_clp.group("t_mercado"), is_percentage=True),
+                        "Precio_Mercado": parse_number(m_clp.group("t_mercado"), True),
                         "Valor_Mercado": parse_number(m_clp.group("valor_mercado")),
                         "Clase_Activo": "RENTA FIJA",
                         "Contraparte": "BanChile"
@@ -290,9 +289,9 @@ def BanChile_Parser(filename):
                             "ISIN": "",
                             "CUSIP": "",
                             "Cantidad": parse_number(valor_nominal),
-                            "Precio_Compra": parse_number(t_compra, is_percentage=True),
+                            "Precio_Compra": parse_number(t_compra, True),
                             "Valor_Compra": parse_number(monto_inicio),
-                            "Precio_Mercado": parse_number(t_mercado, is_percentage=True),
+                            "Precio_Mercado": parse_number(t_mercado, True),
                             "Valor_Mercado": parse_number(valor_actual),
                             "Clase_Activo": current_clase_activo or "RENTA FIJA",
                             "Contraparte": "BanChile"
@@ -472,12 +471,10 @@ if __name__ == "__main__":
     os.makedirs(folder_output, exist_ok=True)
     all_cartera = []
     all_movimientos = []
-    
     for file in os.listdir(folder_input):
         if not file.lower().endswith(".pdf"):
             continue
         filename_noext = os.path.splitext(file)[0]
-        print(f"Procesando {filename_noext}...")
         try:
             cartera, movimientos, nombre = BanChile_Parser(filename_noext)
             if cartera:
@@ -486,44 +483,38 @@ if __name__ == "__main__":
                 all_movimientos.extend(movimientos)
         except Exception as e:
             print(f"Error procesando {file}: {str(e)}")
-    
     if all_cartera or all_movimientos:
         today = datetime.datetime.now().strftime("%Y%m%d")
         output_path = os.path.join(folder_output, f"Informe_{today}.xlsx")
-        
         with pd.ExcelWriter(output_path) as writer:
             if all_cartera:
                 df_cartera = pd.DataFrame(all_cartera)
                 df_cartera.sort_values(by=["Nombre", "Cuenta"], inplace=True)
-                
                 df_cartera_con_espacios = pd.DataFrame()
                 for nombre_cliente, grupo in df_cartera.groupby("Nombre", sort=False):
-                    df_cartera_con_espacios = pd.concat([
-                        df_cartera_con_espacios, 
-                        grupo,
-                        pd.DataFrame([{col: "" for col in df_cartera.columns}]) 
-                    ])
-                
+                    df_cartera_con_espacios = pd.concat([df_cartera_con_espacios, grupo, pd.DataFrame([{col: "" for col in df_cartera.columns}])])
                 df_cartera_con_espacios = df_cartera_con_espacios.iloc[:-1]
+                numeric_cols_cartera = ["Cantidad","Precio_Compra","Valor_Compra","Precio_Mercado","Valor_Mercado"]
+                for col in numeric_cols_cartera:
+                    if col in df_cartera_con_espacios.columns:
+                        df_cartera_con_espacios[col] = df_cartera_con_espacios[col].apply(
+                            lambda x: format(x, ",.2f") if pd.notnull(x) and x != "" else ""
+                        )
                 df_cartera_con_espacios.to_excel(writer, index=False, sheet_name="Cartera")
-            
             if all_movimientos:
                 df_movimientos = pd.DataFrame(all_movimientos)
                 df_movimientos.sort_values(by=["Nombre", "Fecha Liquidación"], inplace=True)
-                
                 df_movimientos_con_espacios = pd.DataFrame()
                 for nombre_cliente, grupo in df_movimientos.groupby("Nombre", sort=False):
-                    df_movimientos_con_espacios = pd.concat([
-                        df_movimientos_con_espacios, 
-                        grupo,
-                        pd.DataFrame([{col: "" for col in df_movimientos.columns}]) 
-                    ])
-                
+                    df_movimientos_con_espacios = pd.concat([df_movimientos_con_espacios, grupo, pd.DataFrame([{col: "" for col in df_movimientos.columns}])])
                 df_movimientos_con_espacios = df_movimientos_con_espacios.iloc[:-1]
+                numeric_cols_movimientos = ["Cantidad","Precio","Monto"]
+                for col in numeric_cols_movimientos:
+                    if col in df_movimientos_con_espacios.columns:
+                        df_movimientos_con_espacios[col] = df_movimientos_con_espacios[col].apply(
+                            lambda x: format(x, ",.2f") if pd.notnull(x) and x != "" else ""
+                        )
                 df_movimientos_con_espacios.to_excel(writer, index=False, sheet_name="Movimientos")
-        
-        print(f"\nInforme generado exitosamente: {output_path}")
-        print(f"Total registros cartera: {len(all_cartera)}")
-        print(f"Total registros movimientos: {len(all_movimientos)}")
+        print(output_path)
     else:
-        print("\nNo se encontraron datos para generar el informe")
+        print("No se encontraron datos para generar el informe")
