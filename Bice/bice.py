@@ -156,7 +156,8 @@ for file in files:
                     row_data = row_data[-5:]
                     cuenta = row_data[0]
                     precio_mercado = float(row_data[1].replace('.', '').replace(',', '.'))
-                    cantidad = float(row_data[2].replace('.', '').replace(',', '.'))
+                    cantidad = float(row_data[2].replace('.', '').replace(',', '.')) 
+                    cantidad+= float(row_data[3].replace('.', '').replace(',', '.'))
                     valor_mercado = float(row_data[4].replace('.', '').replace(',', '.'))
 
                 elif clase_activo == "Intermediación Financiera":
@@ -169,9 +170,13 @@ for file in files:
 
                     row_data = row.split(" ")
                     nemotecnico = " ".join(row_data[:-9])
+                    if nemotecnico == "":
+                        nemotecnico = info_cartera[-1]["Nemotecnico"]
                     row_data = row_data[-9:]
                     cuenta = row_data[0]
                     cantidad = float(row_data[3].replace('.', '').replace(',', '.'))
+                    precio_compra = float(row_data[4].replace('.', '').replace(',', '.'))
+                    precio_mercado = float(row_data[5].replace('.', '').replace(',', '.'))
                     valor_mercado = float(row_data[8].replace('.', '').replace(',', '.'))
                     valor_compra = float(row_data[6].replace('.', '').replace(',', '.'))
 
@@ -186,10 +191,10 @@ for file in files:
                         break
                     
                     row_data = row.split(" ")
-                    nemotecnico = " ".join(row_data[:-7])
-                    cuenta = row_data[-7]
-                    valor_compra = float(row_data[-2].replace('.', '').replace(',', '.'))
-                    valor_mercado = float(row_data[-1].replace('.', '').replace(',', '.'))
+                    nemotecnico = row_data[-7]
+                    cuenta = rut
+                    valor_mercado = float(row_data[-2].replace('.', '').replace(',', '.'))
+                    cantidad = float(row_data[-1].replace('.', '').replace(',', '.'))
 
                 else:
                     print(f"Tipo de activo desconocido: {clase_activo}")
