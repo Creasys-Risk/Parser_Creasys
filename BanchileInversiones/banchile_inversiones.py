@@ -2,6 +2,7 @@ import os
 import re
 import datetime
 import pandas as pd
+from decimal import Decimal, InvalidOperation
 from PyPDF2 import PdfReader
 
 folder_input = "./Input/"
@@ -16,15 +17,19 @@ with open(os.path.join(folder_input, "pass.txt"), "r") as f:
         pass_dict[k] = v.strip()
 
 def parse_number(num_str, is_percentage=False):
+    if not num_str:
+        return None
+    original = num_str.replace("%", "").strip()
+    s = original.replace(".", "").replace(",", ".")
     try:
-        if not num_str:
-            return None
-        num_str = num_str.replace("%", "").strip()
-        s = num_str.replace(".", "").replace(",", ".")
-        val = float(s)
-        return val
-    except:
-        return 0.0
+        d = Decimal(s)
+        if "," in original:
+            dec_places = len(original.split(",")[1])
+            quantizer = Decimal("1." + "0" * dec_places)
+            d = d.quantize(quantizer)
+        return d
+    except InvalidOperation:
+        return Decimal("0")
 
 def extract_text_from_pdf(file_path, pass_key):
     reader = PdfReader(file_path)
@@ -45,7 +50,9 @@ def clean_nemotecnico(nemo: str) -> str:
     return re.sub(r"\s+", " ", nemo).strip().upper()
 
 def shorten_nemotecnico(nemo: str) -> str:
-    return nemo.split("(", 1)[0].strip() if "(" in nemo else nemo.strip()
+    if " - " in nemo:
+        return nemo.split(" - ")[0].strip()
+    return nemo.strip()
 
 def parse_rfi_two_lines(line1: str, line2_combined: str) -> dict:
     pat_line1 = re.compile(
@@ -68,7 +75,10 @@ def parse_rfi_two_lines(line1: str, line2_combined: str) -> dict:
     moneda = m.group("moneda1")
     pat_isin = re.compile(r"(ISIN#\S+)", re.IGNORECASE)
     match_isin = pat_isin.search(line2_combined)
-    isin_val = match_isin.group(1) if match_isin else ""
+    if match_isin:
+        isin_val = match_isin.group(1).replace("ISIN#", "")
+    else:
+        isin_val = ""
     cleaned = re.sub(r"ISIN#\S+", "", line2_combined, flags=re.IGNORECASE)
     cleaned = re.sub(r"[A-Z]{3}\s*[+-]?[\d\.,-]+\s*", "", cleaned, flags=re.IGNORECASE)
     nemotecnico = cleaned.strip().split("Subtotal")[0].strip()
@@ -109,7 +119,7 @@ def BanChile_Parser(filename):
     movimientos = []
     clase_activo_map = {
         "FONDOS MUTUOS": "FONDOS MUTUOS",
-        "FONDOS DE INVERSIÓN": "FONDOS DE INVERSION",
+        "FONDOS DE INVERSIÓN": "FONDOS INVERSIÓN",
         "ACCIONES": "ACCIONES",
         "RENTA FIJA INTERNACIONAL": "Renta Fija Internacional",
         "RENTA FIJA": "RENTA FIJA",
@@ -176,11 +186,43 @@ def BanChile_Parser(filename):
                 if sub in line.upper():
                     current_clase_activo = clase_mapped
             if "RENTA FIJA INTERNACIONAL" in line.upper():
+                current_clase_activo = "Renta Fija Internacional"
                 i += 1
                 while i < len(lines):
-                    next_line = lines[i].strip()
-                    if re.search(r"DETALLE DE POSICIONES EN", next_line, re.IGNORECASE) or re.search(r"DETALLE DE MOVIMIENTOS DE CAJA", next_line, re.IGNORECASE) or re.match(r"^\d{2}/\d{2}/\d{4}", next_line):
+                    current_line = lines[i].strip()
+                    if re.search(r"DETALLE DE (POSICIONES|MOVIMIENTOS)", current_line, re.IGNORECASE):
                         break
+                    if re.match(r"^\d{2}/\d{2}/\d{4}", current_line):
+                        line1 = current_line
+                        line2_combined = []
+                        j = i + 1
+                        while j < len(lines):
+                            next_line = lines[j].strip()
+                            if re.match(r"^\d{2}/\d{2}/\d{4}", next_line) or re.search(r"DETALLE DE", next_line, re.IGNORECASE):
+                                break
+                            line2_combined.append(next_line)
+                            j += 1
+                        line2_combined = " ".join(line2_combined)
+                        parsed = parse_rfi_two_lines(line1, line2_combined)
+                        if parsed:
+                            record = {
+                                "Fecha": fecha_dt.strftime("%d/%m/%Y") if fecha_dt else "",
+                                "Nombre": nombre,
+                                "Cuenta": current_cuenta,
+                                "Nemotecnico": parsed["Nemotecnico"],
+                                "Moneda": parsed["Moneda"],
+                                "ISIN": parsed["ISIN"],
+                                "CUSIP": "",
+                                "Cantidad": parsed["Cantidad"],
+                                "Precio_Mercado": parsed["Precio_Mercado"],
+                                "Valor_Mercado": parsed["Valor_Mercado"],
+                                "Precio_Compra": parsed["Precio_Compra"],
+                                "Valor_Compra": parsed["Valor_Compra"],
+                                "Clase_Activo": parsed["Clase_Activo"],
+                                "Contraparte": "BanChile"
+                            }
+                            cartera.append(record)
+                        i = j - 1
                     i += 1
                 continue
             if current_currency == "UF":
@@ -192,22 +234,38 @@ def BanChile_Parser(filename):
                     precio_mercado = parse_number(m_uf.group("t_mercado"), True)
                     valor_mercado = parse_number(m_uf.group("valor_mercado"))
                     j = i + 1
-                    nemo_lines = []
+                    clp_value = None
+                    nemotecnico_line = ""
                     while j < len(lines):
                         nxt = lines[j].strip()
                         if not nxt or re.match(r"^\d{2}/\d{2}/\d{4}", nxt) or re.search(r"DETALLE DE POSICIONES EN", nxt, re.IGNORECASE) or re.search(r"DETALLE DE MOVIMIENTOS DE CAJA", nxt, re.IGNORECASE):
                             break
-                        nemo_lines.append(nxt)
+                        if nxt.startswith("$"):
+                            m_clp = re.search(r"^\$\s*([\d\.,]+)", nxt)
+                            if m_clp:
+                                clp_value = parse_number(m_clp.group(1))
+                            m_nemo = re.search(r"^\$\s*[\d\.,]+UF\s*[-\d\.,]+\s*([A-Z0-9]+)\s*-", nxt)
+                            if m_nemo:
+                                nemotecnico_line = m_nemo.group(1).strip()
                         j += 1
-                    nemotecnico_text = re.sub(r"(\d+,\d+%\s*[+-]?\s*\d+,\d+%)", "", " ".join(nemo_lines))
-                    m_nemo = re.search(r"([A-Z0-9]{3,}\s*-\s*[A-Za-z].+)", nemotecnico_text)
-                    nemotecnico = m_nemo.group(1).strip() if m_nemo else nemotecnico_text
+                    if clp_value is not None:
+                        valor_mercado = clp_value
+                    if nemotecnico_line:
+                        nemotecnico = nemotecnico_line
+                    else:
+                        nemo_lines = []
+                        for k in range(i+1, j):
+                            nemo_lines.append(lines[k].strip())
+                        nemotecnico_text = " ".join(nemo_lines)
+                        m_nemo2 = re.search(r"([A-Z0-9]{3,})\s*-", nemotecnico_text)
+                        if m_nemo2:
+                            nemotecnico = m_nemo2.group(1).strip()
                     rec_fecha = fecha_dt.strftime("%d/%m/%Y") if fecha_dt else ""
                     record = {
                         "Fecha": rec_fecha,
                         "Nombre": nombre,
                         "Cuenta": current_cuenta,
-                        "Nemotecnico": shorten_nemotecnico(nemotecnico),
+                        "Nemotecnico": nemotecnico,
                         "Moneda": "UF",
                         "ISIN": "",
                         "CUSIP": "",
@@ -321,10 +379,10 @@ def BanChile_Parser(filename):
                             "ISIN": "",
                             "CUSIP": "",
                             "Cantidad": parse_number(cantidad_str),
-                            "Precio_Mercado": parse_number(precio_mercado_str),
-                            "Valor_Mercado": parse_number(valor_mercado_str),
                             "Precio_Compra": parse_number(precio_compra_str),
                             "Valor_Compra": parse_number(valor_compra_str),
+                            "Precio_Mercado": parse_number(precio_mercado_str),
+                            "Valor_Mercado": parse_number(valor_mercado_str),
                             "Clase_Activo": current_clase_activo or "SIN CLASE",
                             "Contraparte": "BanChile"
                         }
@@ -390,6 +448,7 @@ def BanChile_Parser(filename):
                         i = i2
                         continue
                     desc_clean = re.sub(r"^\$?\s*-?[\d\.,]+\s*", "", desc).strip()
+                    desc_clean = re.split(r"\s+\d{2}/\d{2}/\d{4}", desc_clean)[0].strip()
                     nemotecnico = ""
                     descripcion = desc_clean
                     if ":" in desc_clean:
@@ -422,49 +481,6 @@ def BanChile_Parser(filename):
                 i = i2
                 continue
         i += 1
-    i = 0
-    while i < len(lines):
-        line = lines[i].strip()
-        if "RENTA FIJA INTERNACIONAL" in line.upper():
-            j = i + 1
-            while j < len(lines):
-                rfi_line = lines[j].strip()
-                if re.match(r"^\d{2}/\d{2}/\d{4}", rfi_line):
-                    line1 = rfi_line
-                    j2 = j + 1
-                    line2_list = []
-                    while j2 < len(lines):
-                        t = lines[j2].strip()
-                        if re.search(r"DETALLE DE POSICIONES EN", t, re.IGNORECASE) or re.search(r"DETALLE DE MOVIMIENTOS DE CAJA", t, re.IGNORECASE) or re.match(r"^\d{2}/\d{2}/\d{4}", t):
-                            break
-                        line2_list.append(t)
-                        j2 += 1
-                    line2_combined = " ".join(line2_list)
-                    parsed = parse_rfi_two_lines(line1, line2_combined)
-                    if parsed.get("Fecha_Adquisicion"):
-                        rec_fecha = fecha_dt.strftime("%d/%m/%Y") if fecha_dt else ""
-                        record = {
-                            "Fecha": rec_fecha,
-                            "Nombre": nombre,
-                            "Cuenta": "0",
-                            "Nemotecnico": parsed["Nemotecnico"],
-                            "Moneda": parsed["Moneda"],
-                            "ISIN": parsed["ISIN"],
-                            "CUSIP": "",
-                            "Cantidad": parsed["Cantidad"],
-                            "Precio_Mercado": parsed["Precio_Mercado"],
-                            "Valor_Mercado": parsed["Valor_Mercado"],
-                            "Precio_Compra": parsed["Precio_Compra"],
-                            "Valor_Compra": parsed["Valor_Compra"],
-                            "Clase_Activo": parsed["Clase_Activo"],
-                            "Contraparte": "BanChile"
-                        }
-                        if not any(c["Nemotecnico"] == record["Nemotecnico"] and c["Valor_Compra"] == record["Valor_Compra"] for c in cartera):
-                            cartera.append(record)
-                    j = j2
-                else:
-                    j += 1
-        i += 1
     return cartera, movimientos, nombre
 
 if __name__ == "__main__":
@@ -486,35 +502,53 @@ if __name__ == "__main__":
     if all_cartera or all_movimientos:
         today = datetime.datetime.now().strftime("%Y%m%d")
         output_path = os.path.join(folder_output, f"Informe_{today}.xlsx")
-        with pd.ExcelWriter(output_path) as writer:
+        with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
             if all_cartera:
                 df_cartera = pd.DataFrame(all_cartera)
-                df_cartera.sort_values(by=["Nombre", "Cuenta"], inplace=True)
-                df_cartera_con_espacios = pd.DataFrame()
-                for nombre_cliente, grupo in df_cartera.groupby("Nombre", sort=False):
-                    df_cartera_con_espacios = pd.concat([df_cartera_con_espacios, grupo, pd.DataFrame([{col: "" for col in df_cartera.columns}])])
-                df_cartera_con_espacios = df_cartera_con_espacios.iloc[:-1]
-                numeric_cols_cartera = ["Cantidad","Precio_Compra","Valor_Compra","Precio_Mercado","Valor_Mercado"]
-                for col in numeric_cols_cartera:
-                    if col in df_cartera_con_espacios.columns:
-                        df_cartera_con_espacios[col] = df_cartera_con_espacios[col].apply(
-                            lambda x: format(x, ",.2f") if pd.notnull(x) and x != "" else ""
-                        )
-                df_cartera_con_espacios.to_excel(writer, index=False, sheet_name="Cartera")
+                df_cartera["Rut"] = ""
+                df_cartera["interes_Acum"] = ""
+                final_cols = ["Fecha", "Nombre", "Rut", "Cuenta", "Nemotecnico", "Moneda", "ISIN", "CUSIP", "Cantidad", "Precio_Mercado", "Valor_Mercado", "Precio_Compra", "Valor_Compra", "interes_Acum", "Contraparte", "Clase_Activo"]
+                df_cartera = df_cartera.reindex(columns=final_cols)
+                df_cartera = df_cartera.dropna(how="all")
+                df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
+                workbook = writer.book
+                worksheet = writer.sheets["Cartera"]
+                numeric_cols = ["Cantidad", "Precio_Mercado", "Valor_Mercado", "Precio_Compra", "Valor_Compra"]
+                for col_name in numeric_cols:
+                    if col_name in df_cartera.columns:
+                        col_idx = df_cartera.columns.get_loc(col_name)
+                        for row_idx, value in enumerate(df_cartera[col_name], start=1):
+                            if isinstance(value, Decimal):
+                                exponent = value.as_tuple().exponent
+                                dec_places = -exponent if exponent < 0 else 0
+                                num_format = "0" + ("." + "0" * dec_places if dec_places > 0 else "")
+                                cell_format = workbook.add_format({'num_format': num_format})
+                                try:
+                                    numeric_val = float(value)
+                                except:
+                                    numeric_val = 0.0
+                                worksheet.write_number(row_idx, col_idx, numeric_val, cell_format)
             if all_movimientos:
                 df_movimientos = pd.DataFrame(all_movimientos)
-                df_movimientos.sort_values(by=["Nombre", "Fecha Liquidación"], inplace=True)
-                df_movimientos_con_espacios = pd.DataFrame()
-                for nombre_cliente, grupo in df_movimientos.groupby("Nombre", sort=False):
-                    df_movimientos_con_espacios = pd.concat([df_movimientos_con_espacios, grupo, pd.DataFrame([{col: "" for col in df_movimientos.columns}])])
-                df_movimientos_con_espacios = df_movimientos_con_espacios.iloc[:-1]
-                numeric_cols_movimientos = ["Cantidad","Precio","Monto"]
-                for col in numeric_cols_movimientos:
-                    if col in df_movimientos_con_espacios.columns:
-                        df_movimientos_con_espacios[col] = df_movimientos_con_espacios[col].apply(
-                            lambda x: format(x, ",.2f") if pd.notnull(x) and x != "" else ""
-                        )
-                df_movimientos_con_espacios.to_excel(writer, index=False, sheet_name="Movimientos")
+                df_movimientos = df_movimientos.dropna(how="all")
+                df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
+                workbook = writer.book
+                worksheet = writer.sheets["Movimientos"]
+                numeric_cols_mov = ["Cantidad", "Precio", "Monto"]
+                for col_name in numeric_cols_mov:
+                    if col_name in df_movimientos.columns:
+                        col_idx = df_movimientos.columns.get_loc(col_name)
+                        for row_idx, value in enumerate(df_movimientos[col_name], start=1):
+                            if isinstance(value, Decimal):
+                                exponent = value.as_tuple().exponent
+                                dec_places = -exponent if exponent < 0 else 0
+                                num_format = "0" + ("." + "0" * dec_places if dec_places > 0 else "")
+                                cell_format = workbook.add_format({'num_format': num_format})
+                                try:
+                                    numeric_val = float(value)
+                                except:
+                                    numeric_val = 0.0
+                                worksheet.write_number(row_idx, col_idx, numeric_val, cell_format)
         print(output_path)
     else:
         print("No se encontraron datos para generar el informe")
