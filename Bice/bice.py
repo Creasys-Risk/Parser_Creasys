@@ -72,6 +72,8 @@ for file in files:
             precio_compra = ''
             valor_compra = ''
 
+            aux_renta_fija = ''
+
             for row in rows:
                 if clase_activo == 'Renta Fija':
                     if "Subtotal" in row:
@@ -81,18 +83,17 @@ for file in files:
                     if 'glosario' in row:
                         break
                     
-                    if row[0] != ')':
-                        nemotecnico = row
-                    else:
-                        aux_nemo, row = row.split(' : ')
-                        row_data = row.split(" ")
+                    aux_renta_fija += row
+                    if aux_renta_fija[-1].isdigit():
+                        nemotecnico, aux_renta_fija = aux_renta_fija.split("Fecha Compra : ")
+                        nemotecnico,_ = nemotecnico.split(" (")
+                        row_data = aux_renta_fija.split(" ")
                         fecha_compra = row_data.pop(0)
                         cuenta = fecha_compra[10:]
                         fecha_compra = fecha_compra[:10]
-                        nemotecnico += f"{aux_nemo} : {fecha_compra}"
                         cantidad = float(row_data[0].replace('.', '').replace(',', '.'))
-                        precio_compra = float(row_data[3].replace('.', '').replace(',', '.'))
-                        precio_mercado = float(row_data[5].replace('.', '').replace(',', '.'))
+                        precio_compra = float(row_data[4].replace('.', '').replace(',', '.'))
+                        precio_mercado = float(row_data[6].replace('.', '').replace(',', '.'))
                         valor_compra = ""
                         valor_mercado = float(row_data[7].replace('.', '').replace(',', '.'))
 
@@ -123,6 +124,7 @@ for file in files:
                         valor_mercado = ''
                         precio_compra = ''
                         valor_compra = ''
+                        aux_renta_fija = ''
 
                 elif clase_activo == "Renta Variable":
                     if 'Subtotal' in row:
@@ -141,7 +143,7 @@ for file in files:
                     precio_compra = float(row_data[5].replace('.', '').replace(',', '.'))
                     precio_mercado = float(row_data[6].replace('.', '').replace(',', '.'))
                     valor_mercado = float(row_data[8].replace('.', '').replace(',', '.'))
-                    valor_compra = cantidad * precio_compra
+                    valor_compra = ''
                 
                 elif clase_activo == "Fondos Mutuos":
                     if 'Subtotal' in row:
