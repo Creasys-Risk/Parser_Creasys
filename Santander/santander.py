@@ -20,7 +20,7 @@ calendar_mini = {
     "DEC": 12,
 }
 
-def process_bonds(rows: list[str]):
+def process_bonds(rows: list[str], nombre: str, cuenta: str, fecha: date):
     bonds = []
     cartera_bonos = []
     for row in rows:
@@ -54,10 +54,10 @@ def process_bonds(rows: list[str]):
         interes_acum = float(interes_acum.replace(",", ""))
 
         cartera_bonos.append({
-            "Fecha": "",
-            "Nombre": "",
+            "Fecha": fecha,
+            "Nombre": nombre,
             "Rut": "",
-            "Cuenta": "",
+            "Cuenta": cuenta,
             "Nemotecnico": nemo,
             "Moneda": moneda,
             "ISIN": "",
@@ -74,7 +74,7 @@ def process_bonds(rows: list[str]):
         
     return cartera_bonos
 
-def process_funds(rows: list[str]):
+def process_funds(rows: list[str], nombre: str, cuenta: str, fecha: date):
     funds = []
     cartera_fondos = []
     for row in rows:
@@ -111,10 +111,10 @@ def process_funds(rows: list[str]):
         precio_mercado = float(precio_mercado.replace(",", ""))
 
         cartera_fondos.append({
-            "Fecha": "",
-            "Nombre": "",
+            "Fecha": fecha,
+            "Nombre": nombre,
             "Rut": "",
-            "Cuenta": "",
+            "Cuenta": cuenta,
             "Nemotecnico": nemo,
             "Moneda": moneda,
             "ISIN": "",
@@ -130,6 +130,70 @@ def process_funds(rows: list[str]):
         })
 
     return cartera_fondos
+
+def process_movements(rows: list[str], nombre: str, cuenta: str, fecha: date):
+    row_aux = ''
+    folio = ''
+    movements: list[str] = []
+    cartera_movimientos: list[dict] = []
+
+    for row in rows:
+        row_aux += f" {row}"
+
+        if ' - ' in row_aux:
+            movements.append(row_aux)
+            row_aux = ''
+
+    for move in movements:
+        move = move.split(" ")
+        nemo = " ".join(move[:-6])
+        move = move[-6:]
+
+        if move[1] == '-':
+            # Se trata del balance inicial de la cuenta
+            folio = nemo
+            continue
+
+        if len(move[0]) > 3:
+            nemo += f" {move[0][:-3]}"
+            move[0] = move[0][-3:]
+
+        fecha_liquidacion = move[1]
+        day, month, year = fecha_liquidacion.split('-')
+        fecha_liquidacion = date(int(f"20{year}"), calendar_mini[month], int(day))
+
+        fecha_movimiento = move[2]
+        day, month, year = fecha_movimiento.split('-')
+        fecha_movimiento = date(int(f"20{year}"), calendar_mini[month], int(day))
+
+        moneda = move[0]
+        monto = move[3] if move[3] != '-' else move[4]
+        monto = float(monto.replace(',', ''))
+        descripcion = "Deposito" if move[3] != '-' else "Retiro"
+
+        cartera_movimientos.append({
+            "Fecha Movimiento": fecha_movimiento,
+            "Fecha Liquidación": fecha_liquidacion,
+            "Nombre": nombre,
+            "RUT": "",
+            "Cuenta": cuenta,
+            "Nemotecnico": nemo,
+            "Moneda": moneda,
+            "ISIN": "",
+            "CUSIP": "",
+            "Cantidad": "",
+            "Precio": "",
+            "Monto": monto,
+            "Comision": 0,
+            "IVA": 0,
+            "Tipo": "Caja",
+            "Descripcion": descripcion,
+            "Concepto": "MOVIMIENTO",
+            "Folio": folio,
+            "Contraparte": "SANTANDER",
+        })
+
+    return cartera_movimientos
 
 folder_input = "./Input/"
 folder_output = "./Output/"
@@ -152,19 +216,45 @@ for file in files:
     with open(f"{folder_output}{filename}.txt", "w", encoding="utf-8") as f:
         f.write(text)
 
-    data = text.split("Total(%)\n")
+    _,aux = text.split("Global Vision of the Market and Your Account ")
+    aux,_ = aux.split("\n", maxsplit=1)
+    _,aux = aux.split(" to ")
+    aux = aux.replace(" - ", " ")
+    aux = aux.split(" ")
+    
+    day, month, year = aux[0].split("-")
+    fecha = date(int(f"20{year}"), calendar_mini[month], int(day))
+    cuenta= aux[1]
+    nombre = " ".join(aux[2:])
 
-    info_cartera = []
-    for table in data[1:]:
+    data_cartera = text.split("Total(%)\n")
+
+    for table in data_cartera[1:]:
         rows = table.split("\n")
 
         if "CASH" in rows[0]:
             continue
         if "ANNUAL" in rows[1]:
-            info = process_bonds(rows)
+            info = process_bonds(rows, nombre, cuenta, fecha)
         else:
-            info = process_funds(rows)
+            info = process_funds(rows, nombre, cuenta, fecha)
         
         info_cartera += info
 
-print(info_cartera)
+    data_movimientos = text.split("Transactions\nDetail ccy. Value Date Booking Date Deposit Withdraws Balance\n")
+    del data_movimientos[0]
+
+    for table in data_movimientos:
+        rows,_ = table.split("\nPlease see important information on the last page")
+        rows = rows.split("\n")
+        
+        info = process_movements(rows, nombre, cuenta, fecha)
+
+        info_movimientos += info
+
+df_cartera = pd.DataFrame(info_cartera)
+df_movimientos = pd.DataFrame(info_movimientos)
+
+with pd.ExcelWriter(f"./output/Informe_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+    df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
+    df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
