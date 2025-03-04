@@ -214,6 +214,6 @@ if __name__ == "__main__":
     df_cartera = pd.DataFrame(data_cartera)
     df_movimientos = pd.DataFrame(data_movimientos)
 
-    with pd.ExcelWriter(f"./output/Informe_{date.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+    with pd.ExcelWriter(f"./output/Informe_{date.strftime('%YYYY%MM%DD')}.xlsx", engine="openpyxl") as writer:
         df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
         df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
