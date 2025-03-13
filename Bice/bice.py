@@ -365,6 +365,10 @@ for file in files:
 df_cartera = pd.DataFrame(info_cartera)
 df_movimientos = pd.DataFrame(info_movimientos)
 
+<<<<<<< HEAD
 with pd.ExcelWriter(f"./output/Informe_{fecha.strftime('%YY%mm%dd')}.xlsx", engine="openpyxl") as writer:
+=======
+with pd.ExcelWriter(f"./output/Informe_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+>>>>>>> c145ca1c5de0f3df47bdcbf241d97e654ea096df
     df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
     df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")

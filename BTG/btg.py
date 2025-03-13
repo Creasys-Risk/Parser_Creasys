@@ -13,11 +13,7 @@ os.makedirs(FOLDER_TXT, exist_ok=True)
 
 def extract_text_from_pdf(pdf_path):
     reader = PdfReader(pdf_path)
-    text_pages = []
-    for page in reader.pages:
-        page_text = page.extract_text() or ""
-        text_pages.append(page_text)
-    return "\n".join(text_pages)
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 def parse_number(num_str):
     if not num_str:
@@ -36,10 +32,24 @@ def get_fecha_global(text):
     m = re.search(r"al\s+(\d{1,2}\s+de\s+\w+\s+de\s+\d{4})", text, re.IGNORECASE)
     return m.group(1).strip() if m else ""
 
+def convert_fecha(fecha_str):
+    meses = {"ENERO": 1, "FEBRERO": 2, "MARZO": 3, "ABRIL": 4, "MAYO": 5, "JUNIO": 6,
+             "JULIO": 7, "AGOSTO": 8, "SEPTIEMBRE": 9, "OCTUBRE": 10, "NOVIEMBRE": 11, "DICIEMBRE": 12}
+    parts = fecha_str.upper().split(" DE ")
+    if len(parts) == 3:
+        try:
+            return datetime.date(
+                int(parts[2].strip()),
+                meses.get(parts[1].strip(), 0),
+                int(parts[0].strip())
+            )
+        except:
+            return None
+    return None
+
 def get_metadata_block(text):
     fecha_global = get_fecha_global(text)
-    if not fecha_global:
-        fecha_global = ""
+    fecha_obj = convert_fecha(fecha_global) if fecha_global else None
     mr = re.search(r"(\d{1,2}\.\d{3}\.\d{3}-[\dkK])", text)
     rut = mr.group(1) if mr else ""
     nombre = ""
@@ -68,9 +78,9 @@ def get_metadata_block(text):
                 cuenta = mc.group(1).strip()
     try:
         cuenta = float(cuenta) if cuenta != "" else ""
-    except Exception:
+    except:
         cuenta = ""
-    return fecha_global.strip(), nombre.strip(), rut.strip(), cuenta
+    return fecha_obj, nombre.strip(), rut.strip(), cuenta
 
 def fix_section_headers(text):
     patterns = [
@@ -108,10 +118,7 @@ def detect_currency_dynamic(line: str, default_moneda: str) -> str:
 def parse_fondos_inversion_local_clp(line):
     p = re.compile(
         r"^(?P<nemotecnico>.+?)\s+"
-        r"(?P<cantidad>[\d\.,]+)\s+\$\s*"
-        r"(?P<precio_compra>[\d\.,]+)\s+\$\s*"
-        r"(?P<precio_mercado>[\d\.,]+)\s+\$\s*"
-        r"(?P<valor_mercado>[\d\.,]+).*"
+        r"(?P<cantidad>[\d\.,]+)\s+\$\s*(?P<precio_compra>[\d\.,]+)\s+\$\s*(?P<precio_mercado>[\d\.,]+)\s+\$\s*(?P<valor_mercado>[\d\.,]+).*"
     )
     m = p.match(line.strip())
     if not m:
@@ -123,7 +130,7 @@ def parse_fondos_inversion_local_clp(line):
         "Precio_Mercado": m.group("precio_mercado"),
         "Valor_Mercado": m.group("valor_mercado")
     }
-    for campo in ["Cantidad", "Precio_Compra", "Precio_Mercado", "Valor_Mercado"]:
+    for campo in ["Cantidad","Precio_Compra","Precio_Mercado","Valor_Mercado"]:
         if parse_number(record[campo]) is None:
             return None
     return record
@@ -134,7 +141,7 @@ def parse_fondos_mutuos_locales_clp(line):
         return None
     sub = line[fm_idx:].strip()
     p = re.compile(
-        r"^(?P<nemotecnico>FM\s+.+?)\s+"
+        r"^(?P<nemotecnico>FM\s+.+?)(?:\s+(?P<serie>[A-Z]))?\s+"
         r"(?P<cantidad>[\d\.,]+)\s+\$\s*"
         r"(?P<precio_compra>[\d\.,]+)\s+\$\s*"
         r"(?P<precio_mercado>[\d\.,]+)\s+"
@@ -144,14 +151,18 @@ def parse_fondos_mutuos_locales_clp(line):
     m = p.match(sub)
     if not m:
         return None
+    nem = m.group("nemotecnico").strip()
+    serie = m.group("serie")
+    if serie:
+        nem = nem + " " + serie
     record = {
-        "Nemotecnico": re.sub(r"\s+A$", "", m.group("nemotecnico").strip()),
+        "Nemotecnico": nem,
         "Cantidad": m.group("cantidad"),
         "Precio_Compra": m.group("precio_compra"),
         "Precio_Mercado": m.group("precio_mercado"),
         "Valor_Mercado": m.group("valor_mercado")
     }
-    for campo in ["Cantidad", "Precio_Compra", "Precio_Mercado", "Valor_Mercado"]:
+    for campo in ["Cantidad","Precio_Compra","Precio_Mercado","Valor_Mercado"]:
         if parse_number(record[campo]) is None:
             return None
     return record
@@ -177,8 +188,8 @@ def parse_fmius_line_regex(line):
         "Precio_Compra": m.group("precio_compra").strip(),
         "Precio_Mercado": m.group("precio_mercado").strip()
     }
-    for campo in ["Cantidad", "Precio_Compra", "Precio_Mercado", "Valor_Mercado"]:
-        if parse_number(record[campo]) is None:
+    for campo in ["Cantidad","Precio_Compra","Precio_Mercado","Valor_Mercado"]:
+        if parse_number(record.get(campo, "")) is None:
             return None
     return record
 
@@ -199,7 +210,7 @@ def parse_fondos_mutuos_internacionales_usd_block(lines, start_idx):
 
 def parse_renta_fija_internacional_usd_new(line):
     tokens = line.split()
-    if not tokens or tokens[0].lower() == "total" or tokens[0].replace(",", "").replace(".", "").isdigit():
+    if not tokens or tokens[0].lower()=="total" or tokens[0].replace(",","").replace(".","").isdigit():
         return None
     try:
         usd_index = tokens.index("USD")
@@ -208,76 +219,66 @@ def parse_renta_fija_internacional_usd_new(line):
         precio_compra = tokens[usd_index+3]
         precio_mercado = tokens[usd_index+4]
         valor_mercado = tokens[usd_index+6]
-    except (ValueError, IndexError):
+    except:
         return None
-    if (parse_number(cantidad) is None or
-        parse_number(precio_compra) is None or
-        parse_number(precio_mercado) is None or
-        parse_number(valor_mercado) is None):
+    if any(parse_number(x) is None for x in [cantidad,precio_compra,precio_mercado,valor_mercado]):
         return None
-    return {
-        "Nemotecnico": instrument,
-        "Cantidad": cantidad,
-        "Precio_Compra": precio_compra,
-        "Precio_Mercado": precio_mercado,
-        "Valor_Mercado": valor_mercado
-    }
+    return {"Nemotecnico":instrument,"Cantidad":cantidad,"Precio_Compra":precio_compra,"Precio_Mercado":precio_mercado,"Valor_Mercado":valor_mercado}
 
 def parse_renta_fija_internacional_usd_block(lines, start_idx):
-    data = []
-    i = start_idx
-    while i < len(lines):
-        line = lines[i].strip()
+    data=[]
+    i=start_idx
+    while i<len(lines):
+        line=lines[i].strip()
         if not line or is_new_section_header(line):
             break
-        rec = parse_renta_fija_internacional_usd_new(line)
+        rec=parse_renta_fija_internacional_usd_new(line)
         if rec:
-            rec["Moneda"] = "USD"
-            rec["Clase_Activo"] = "Renta Fija  Internacional"
+            rec["Moneda"]="USD"
+            rec["Clase_Activo"]="Renta Fija  Internacional"
             data.append(rec)
-        i += 1
-    return data, i
+        i+=1
+    return data,i
 
 def parse_fondos_mutuos_locales_usd(line):
-    pattern = re.compile(
-        r"^(?:[\d,]+\s*%)\s+(?P<nemotecnico>FM\s+.+?)\s+A\s+"
+    pattern=re.compile(
+        r"^(?:[\d,]+\s*%)\s+"
+        r"(?P<nemotecnico>FM\s+.+?)(?:\s+(?P<serie>[A-Z]))?\s+"
         r"(?P<cantidad>[\d\.,]+)\s+(?:[\d,]+\s*%)\s+"
         r"(?P<valor_mkt>[\d\.,]+)\s+USD\s+"
         r"(?P<precio_compra>[\d\.,]+)\s+USD\s+"
         r"(?P<precio_mercado>[\d\.,]+)\s+USD"
     )
-    m = pattern.search(line)
+    m=pattern.search(line)
     if not m:
         return None
-    record = {
-        "Nemotecnico": m.group("nemotecnico").strip(),
-        "Cantidad": m.group("cantidad").strip(),
-        "Valor_Mercado": m.group("valor_mkt").strip(),
-        "Precio_Compra": m.group("precio_compra").strip(),
-        "Precio_Mercado": m.group("precio_mercado").strip()
-    }
-    for campo in ["Cantidad", "Precio_Compra", "Precio_Mercado", "Valor_Mercado"]:
+    nem=m.group("nemotecnico").strip()
+    serie=m.group("serie")
+    if serie:
+        nem=nem+" "+serie
+    record={"Nemotecnico":nem,"Cantidad":m.group("cantidad").strip(),"Valor_Mercado":m.group("valor_mkt").strip(),"Precio_Compra":m.group("precio_compra").strip(),"Precio_Mercado":m.group("precio_mercado").strip()}
+    for campo in ["Cantidad","Precio_Compra","Precio_Mercado","Valor_Mercado"]:
         if parse_number(record[campo]) is None:
             return None
     return record
 
 def parse_fondos_mutuos_usd_block(lines, start_idx):
-    data = []
-    i = start_idx
-    while i < len(lines):
-        line = lines[i].strip()
+    data=[]
+    i=start_idx
+    while i<len(lines):
+        line=lines[i].strip()
         if not line or is_new_section_header(line):
             break
-        rec = parse_fondos_mutuos_locales_usd(line)
+        rec=parse_fondos_mutuos_locales_usd(line)
         if rec:
-            rec["Moneda"] = "USD"
-            rec["Clase_Activo"] = "Fondos Mutuos"
+            rec["Moneda"]="USD"
+            rec["Clase_Activo"]="Fondos Mutuos"
             data.append(rec)
-        i += 1
-    return data, i
+        i+=1
+    return data,i
 
 def parse_renta_fija_local_clp(line):
-    p = re.compile(
+    p=re.compile(
         r"^(?P<nemo>\S+)\s+"
         r"(?P<emisor>.+?)\s+"
         r"(?P<rating>\S+)\s+"
@@ -288,46 +289,46 @@ def parse_renta_fija_local_clp(line):
         r"(?P<precio_mercado>[\d\.,-]+)%\s+[\d\.,]+\s*%\s+\$\s+"
         r"(?P<valor_mercado>[\d\.,]+)"
     )
-    m = p.match(line.strip())
+    m=p.match(line.strip())
     if not m:
         return None
-    record = {
-        "Nemotecnico": m.group("nemo"),
-        "Moneda": m.group("moneda"),
-        "Cantidad": m.group("cantidad"),
-        "Precio_Compra": m.group("precio_compra"),
-        "Precio_Mercado": m.group("precio_mercado"),
-        "Valor_Mercado": m.group("valor_mercado")
+    record={
+        "Nemotecnico":m.group("nemo"),
+        "Moneda":m.group("moneda"),
+        "Cantidad":m.group("cantidad"),
+        "Precio_Compra":m.group("precio_compra"),
+        "Precio_Mercado":m.group("precio_mercado"),
+        "Valor_Mercado":m.group("valor_mercado")
     }
-    for campo in ["Cantidad", "Precio_Compra", "Precio_Mercado", "Valor_Mercado"]:
+    for campo in ["Cantidad","Precio_Compra","Precio_Mercado","Valor_Mercado"]:
         if parse_number(record[campo]) is None:
             return None
     return record
 
 def parse_acciones_local_clp(line):
-    if any(line.strip().startswith(prefix) for prefix in ("Total", "Fondo", "FI", "Detalle", "Instrumento")):
+    if any(line.strip().startswith(prefix) for prefix in ("Total","Fondo","FI","Detalle","Instrumento")):
         return None
-    p = re.compile(
+    p=re.compile(
         r"^(?P<nem>\S+)\s+"
         r"(?P<cant>[\d\.,]+)\s+\$\s*(?P<pcompra>[\d\.,]+)\s+\$\s*(?P<pmercado>[\d\.,]+)\s+"
         r"(?P<varprecio>[-\d\.,]+)\s*%\s+\$\s*(?P<valormercado>[\d\.,]+)"
     )
-    m = p.search(line.strip())
+    m=p.search(line.strip())
     if not m:
         return None
-    record = {
-        "Nemotecnico": m.group("nem"),
-        "Cantidad": m.group("cant"),
-        "Precio_Compra": m.group("pcompra"),
-        "Precio_Mercado": m.group("pmercado"),
-        "Valor_Mercado": m.group("valormercado")
+    record={
+        "Nemotecnico":m.group("nem"),
+        "Cantidad":m.group("cant"),
+        "Precio_Compra":m.group("pcompra"),
+        "Precio_Mercado":m.group("pmercado"),
+        "Valor_Mercado":m.group("valormercado")
     }
-    for campo in ["Cantidad", "Precio_Compra", "Precio_Mercado", "Valor_Mercado"]:
+    for campo in ["Cantidad","Precio_Compra","Precio_Mercado","Valor_Mercado"]:
         if parse_number(record[campo]) is None:
             return None
     return record
 
-section_patterns = [
+section_patterns=[
     r"(?:Inversiones En|Fondo Serie\s+Nro\. Cuotas).*Fondos De Inversión\s+Locales En CLP",
     r"Inversiones En Fondos Mutuos\s+Locales En CLP",
     r"Inversiones En Fondos Mutuos\s+Internacionales En USD",
@@ -340,121 +341,58 @@ section_patterns = [
 def is_new_section_header(line):
     return any(re.search(pat, line, re.IGNORECASE) for pat in section_patterns)
 
-def parse_section(lines, start_idx, section_title, total_title, func, clase, default_moneda):
-    data = []
-    i = start_idx
-    while i < len(lines):
-        line = lines[i].strip()
-        if (re.search(total_title, line, re.IGNORECASE) or 
-            is_new_section_header(line) or 
-            re.search(r"^(Nombre|Detalle De Movimientos)", line, re.IGNORECASE)):
+def parse_section(lines,start_idx,section_title,total_title,func,clase,default_moneda):
+    data=[]
+    i=start_idx
+    while i<len(lines):
+        line=lines[i].strip()
+        if re.search(total_title,line,re.IGNORECASE) or is_new_section_header(line) or re.search(r"^(Nombre|Detalle De Movimientos)",line,re.IGNORECASE):
             break
-        rec = func(line)
+        rec=func(line)
         if rec:
-            rec["Clase_Activo"] = clase
+            rec["Clase_Activo"]=clase
             if "Moneda" in rec and rec["Moneda"]:
-                rec["Moneda"] = detect_currency_dynamic(line, rec["Moneda"])
+                rec["Moneda"]=detect_currency_dynamic(line,rec["Moneda"])
             else:
-                rec["Moneda"] = detect_currency_dynamic(line, default_moneda)
+                rec["Moneda"]=detect_currency_dynamic(line,default_moneda)
             data.append(rec)
-        i += 1
-    return data, i
-
-def detect_currency_dynamic(line: str, default_moneda: str) -> str:
-    up_line = line.upper()
-    if "USD" in up_line:
-        return "USD"
-    if "UF" in up_line and "$" in up_line:
-        if re.search(r"\d+,\d+%\s*", up_line):
-            return "UF"
-        else:
-            return "CLP"
-    if "UF" in up_line:
-        return "UF"
-    if "$" in up_line:
-        return "CLP"
-    return default_moneda
+        i+=1
+    return data,i
 
 def parse_all_investment_sections(lines):
-    sections = [
-        {
-            "section_title": r"Inversiones En Fondos De Inversión\s+Locales En CLP",
-            "total_title": r"^Total Inversiones En Fondos De Inversión\s+Locales En CLP",
-            "func": parse_fondos_inversion_local_clp,
-            "clase": "Fondos De Inversión",
-            "moneda": "CLP"
-        },
-        {
-            "section_title": r"Inversiones En Fondos Mutuos\s+Locales En CLP",
-            "total_title": r"^Total Inversiones En Fondos Mutuos\s+Locales En CLP",
-            "func": parse_fondos_mutuos_locales_clp,
-            "clase": "Fondos Mutuos",
-            "moneda": "CLP"
-        },
-        {
-            "section_title": r"Inversiones En Fondos Mutuos\s+Internacionales En USD",
-            "total_title": r"^Total Inversiones En Fondos Mutuos\s+Internacionales En USD",
-            "func": parse_fondos_mutuos_internacionales_usd_block,
-            "clase": "Fondos Mutuos Internacionales",
-            "moneda": "USD",
-            "block": True
-        },
-        {
-            "section_title": r"Inversiones En Renta Fija\s+Internacional\s+En\s+USD",
-            "total_title": r"^Instrumento\s+Emisor\s+Rating\s+Moneda\s+F\.Vencimiento",
-            "func": parse_renta_fija_internacional_usd_block,
-            "clase": "Renta Fija  Internacional",
-            "moneda": "USD",
-            "block": True
-        },
-        {
-            "section_title": r"Inversiones En Renta Fija\s+Locales En CLP",
-            "total_title": r"^Total Inversiones En Renta Fija\s+Locales En CLP",
-            "func": parse_renta_fija_local_clp,
-            "clase": "Renta Fija",
-            "moneda": "UF"
-        },
-        {
-            "section_title": r"Inversiones En Acciones\s+Locales En CLP",
-            "total_title": r"^Total Inversiones En Acciones\s+Locales En CLP",
-            "func": parse_acciones_local_clp,
-            "clase": "Acciones",
-            "moneda": "CLP"
-        },
-        {
-            "section_title": r"Inversiones En Fondos Mutuos Locales En USD",
-            "total_title": r"^Total Inversiones En Fondos Mutuos Locales En USD",
-            "func": parse_fondos_mutuos_usd_block,
-            "clase": "Fondos Mutuos",
-            "moneda": "USD",
-            "block": True
-        }
+    sections=[
+        {"section_title":r"Inversiones En Fondos De Inversión\s+Locales En CLP","total_title":r"^Total Inversiones En Fondos De Inversión\s+Locales En CLP","func":parse_fondos_inversion_local_clp,"clase":"Fondos De Inversión","moneda":"CLP"},
+        {"section_title":r"Inversiones En Fondos Mutuos\s+Locales En CLP","total_title":r"^Total Inversiones En Fondos Mutuos\s+Locales En CLP","func":parse_fondos_mutuos_locales_clp,"clase":"Fondos Mutuos","moneda":"CLP"},
+        {"section_title":r"Inversiones En Fondos Mutuos\s+Internacionales En USD","total_title":r"^Total Inversiones En Fondos Mutuos\s+Internacionales En USD","func":parse_fondos_mutuos_internacionales_usd_block,"clase":"Fondos Mutuos Internacionales","moneda":"USD","block":True},
+        {"section_title":r"Inversiones En Renta Fija\s+Internacional\s+En\s+USD","total_title":r"^Instrumento\s+Emisor\s+Rating\s+Moneda\s+F\.Vencimiento","func":parse_renta_fija_internacional_usd_block,"clase":"Renta Fija  Internacional","moneda":"USD","block":True},
+        {"section_title":r"Inversiones En Renta Fija\s+Locales En CLP","total_title":r"^Total Inversiones En Renta Fija\s+Locales En CLP","func":parse_renta_fija_local_clp,"clase":"Renta Fija","moneda":"UF"},
+        {"section_title":r"Inversiones En Acciones\s+Locales En CLP","total_title":r"^Total Inversiones En Acciones\s+Locales En CLP","func":parse_acciones_local_clp,"clase":"Acciones","moneda":"CLP"},
+        {"section_title":r"Inversiones En Fondos Mutuos Locales En USD","total_title":r"^Total Inversiones En Fondos Mutuos Locales En USD","func":parse_fondos_mutuos_usd_block,"clase":"Fondos Mutuos","moneda":"USD","block":True}
     ]
-    all_invs = []
-    i = 0
-    n = len(lines)
-    while i < n:
-        line = lines[i].strip()
-        matched = False
+    all_invs=[]
+    i=0
+    n=len(lines)
+    while i<n:
+        line=lines[i].strip()
+        matched=False
         for sec in sections:
-            if re.search(sec["section_title"], line, re.IGNORECASE):
+            if re.search(sec["section_title"],line,re.IGNORECASE):
                 if sec.get("block"):
-                    block_data, new_i = sec["func"](lines, i+1)
+                    block_data,new_i=sec["func"](lines,i+1)
                 else:
-                    block_data, new_i = parse_section(lines, i+1, sec["section_title"], sec["total_title"],
-                                                      sec["func"], sec["clase"], sec["moneda"])
+                    block_data,new_i=parse_section(lines,i+1,sec["section_title"],sec["total_title"],sec["func"],sec["clase"],sec["moneda"])
                 all_invs.extend(block_data)
-                i = new_i
-                matched = True
+                i=new_i
+                matched=True
                 break
         if not matched:
-            i += 1
+            i+=1
     return all_invs
 
-def parse_movements_in_block(lines, start_idx, nombre, rut, cuenta):
-    movs = []
-    i = start_idx
-    usd_regex = re.compile(
+def parse_movements_in_block(lines,start_idx,nombre,rut,cuenta):
+    movs=[]
+    i=start_idx
+    usd_regex=re.compile(
         r"^(?P<fecha_mov>\d{2}-\d{2}-\d{4})\s+"
         r"(?P<tipo>\w+)\s+"
         r"(?P<instrumento>(?:\S+\s+){3}\S+)\s+"
@@ -465,7 +403,7 @@ def parse_movements_in_block(lines, start_idx, nombre, rut, cuenta):
         r"(?P<precio>[\d\.,-]+)(?:\s+.*)?$",
         re.IGNORECASE
     )
-    clp_regex = re.compile(
+    clp_regex=re.compile(
         r"^(?P<fecha_mov>\d{2}-\d{2}-\d{4})\s+"
         r"(?P<tipo>\w+)\s+"
         r"(?P<instrumento>.+?)\s+"
@@ -475,184 +413,173 @@ def parse_movements_in_block(lines, start_idx, nombre, rut, cuenta):
         r"(?P<precio>[\d\.,-]+)\s+\$\s*\S+\s+\$\s*(?P<monto>[+-]?[\d\.,-]+)(?:\s+.*)?$",
         re.IGNORECASE
     )
-    while i < len(lines):
-        l = lines[i].strip()
-        if re.search(r"^(Cartola de Movimientos|Nombre|Detalle De Movimientos|Inversiones En |Ganancias / Pérdidas)", l, re.IGNORECASE):
+    while i<len(lines):
+        l=lines[i].strip()
+        if re.search(r"^(Cartola de Movimientos|Nombre|Detalle De Movimientos|Inversiones En |Ganancias / Pérdidas)",l,re.IGNORECASE):
             break
-        reg = usd_regex if "USD" in l.upper() else clp_regex
-        m = reg.match(l)
+        reg=usd_regex if "USD" in l.upper() else clp_regex
+        m=reg.match(l)
         if m:
-            monto_val = parse_number(m.group("monto"))
-            uds_val = parse_number(m.group("cantidad"))
-            px_val = parse_number(m.group("precio"))
+            monto_val=parse_number(m.group("monto"))
+            uds_val=parse_number(m.group("cantidad"))
+            px_val=parse_number(m.group("precio"))
             if uds_val is None or px_val is None or monto_val is None:
-                i += 1
+                i+=1
                 continue
             movs.append({
-                "Fecha Movimiento": m.group("fecha_mov"),
-                "Fecha Liquidación": m.group("fecha_liq"),
-                "Nombre": nombre,
-                "RUT": rut,
-                "Cuenta": cuenta,
-                "Nemotecnico": unify_spaces(m.group("instrumento")),
-                "Moneda": "USD" if "USD" in l.upper() else "CLP",
-                "ISIN": "",
-                "CUSIP": "",
-                "Cantidad": uds_val,
-                "Precio": px_val,
-                "Monto": monto_val,
-                "Comision": "",
-                "tipo": m.group("tipo"),
-                "descripcion": "",
-                "Concepto": "",
-                "Folio": m.group("doc"),
-                "Contraparte": "BTG pactual"
+                "Fecha Movimiento":m.group("fecha_mov"),
+                "Fecha Liquidación":m.group("fecha_liq"),
+                "Nombre":nombre,
+                "RUT":rut,
+                "Cuenta":cuenta,
+                "Nemotecnico":unify_spaces(m.group("instrumento")),
+                "Moneda":"USD" if "USD" in l.upper() else "CLP",
+                "ISIN":"",
+                "CUSIP":"",
+                "Cantidad":uds_val,
+                "Precio":px_val,
+                "Monto":monto_val,
+                "Comision":"",
+                "tipo":m.group("tipo"),
+                "descripcion":"",
+                "Concepto":"",
+                "Folio":m.group("doc"),
+                "Contraparte":"BTG pactual"
             })
-        i += 1
-    return movs, i
+        i+=1
+    return movs,i
 
 def process_file_to_data(file_path):
     if file_path.lower().endswith(".pdf"):
-        text = extract_text_from_pdf(file_path)
+        text=extract_text_from_pdf(file_path)
     else:
-        with open(file_path, "r", encoding="utf-8") as f:
-            text = f.read()
-    text = fix_section_headers(text)
-    base_name = os.path.basename(file_path)
-    dbg_txt_path = os.path.join(FOLDER_TXT, base_name + ".txt")
-    with open(dbg_txt_path, "w", encoding="utf-8") as dbg:
+        with open(file_path,"r",encoding="utf-8") as f:
+            text=f.read()
+    text=fix_section_headers(text)
+    base_name=os.path.basename(file_path)
+    dbg_txt_path=os.path.join(FOLDER_TXT,base_name+".txt")
+    with open(dbg_txt_path,"w",encoding="utf-8") as dbg:
         dbg.write(text)
-    fecha_global, nombre_global, rut_global, cuenta_global = get_metadata_block(text)
-    if not fecha_global:
-        fecha_global = ""
-    nombre = re.sub(r"^Cuenta", "", nombre_global).strip()
-    nombre = re.sub(r"\.$", "", nombre)
-    lines = text.splitlines()
-    inversiones = parse_all_investment_sections(lines)
-    cartera = []
+    fecha_obj,nombre_global,rut_global,cuenta_global=get_metadata_block(text)
+    if not fecha_obj:
+        fecha_obj=""
+    lines=text.splitlines()
+    inversiones=parse_all_investment_sections(lines)
+    cartera=[]
     for inv in inversiones:
-        registro = {}
-        registro["Fecha"] = fecha_global
-        registro["Nombre"] = nombre
-        registro["RUT"] = rut_global
-        registro["Cuenta"] = cuenta_global
-        registro["Nemotecnico"] = inv.get("Nemotecnico", "")
-        registro["Moneda"] = inv.get("Moneda", "CLP")
-        registro["ISIN"] = ""
-        registro["CUSIP"] = ""
-        registro["Cantidad"] = parse_number(inv.get("Cantidad", ""))
-        registro["Precio_Mercado"] = parse_number(inv.get("Precio_Mercado", ""))
-        registro["Valor_Mercado"] = parse_number(inv.get("Valor_Mercado", ""))
-        registro["Precio_Compra"] = parse_number(inv.get("Precio_Compra", ""))
-        if registro["Moneda"].upper() in ["CLP", "USD"]:
+        registro={}
+        registro["Fecha"]=fecha_obj
+        registro["Nombre"]=re.sub(r"\.$","",re.sub(r"^Cuenta","",nombre_global).strip())
+        registro["RUT"]=rut_global
+        registro["Cuenta"]=cuenta_global
+        registro["Nemotecnico"]=inv.get("Nemotecnico","")
+        registro["Moneda"]=inv.get("Moneda","CLP")
+        registro["ISIN"]=""
+        registro["CUSIP"]=""
+        registro["Cantidad"]=parse_number(inv.get("Cantidad",""))
+        registro["Precio_Mercado"]=parse_number(inv.get("Precio_Mercado",""))
+        registro["Valor_Mercado"]=parse_number(inv.get("Valor_Mercado",""))
+        registro["Precio_Compra"]=parse_number(inv.get("Precio_Compra",""))
+        if registro["Moneda"].upper() in ["CLP","USD"]:
             if registro["Cantidad"] is not None and registro["Precio_Compra"] is not None:
-                registro["Valor_Compra"] = registro["Cantidad"] * registro["Precio_Compra"]
+                registro["Valor_Compra"]=registro["Cantidad"]*registro["Precio_Compra"]
             else:
-                registro["Valor_Compra"] = ""
+                registro["Valor_Compra"]=""
         else:
-            registro["Valor_Compra"] = ""
-        registro["interes_Acum"] = ""
-        registro["Contraparte"] = "BTG pactual"
-        registro["Clase_Activo"] = inv.get("Clase_Activo", "")
+            registro["Valor_Compra"]=""
+        registro["interes_Acum"]=""
+        registro["Contraparte"]="BTG pactual"
+        registro["Clase_Activo"]=inv.get("Clase_Activo","")
         cartera.append(registro)
-    movs = []
-    i = 0
-    while i < len(lines):
-        l = lines[i].strip()
-        if re.match(r"^Cartola de Movimientos", l, re.IGNORECASE):
-            parsed, new_i = parse_movements_in_block(lines, i+1, nombre, rut_global, cuenta_global)
+    movs=[]
+    i=0
+    while i<len(lines):
+        l=lines[i].strip()
+        if re.match(r"^Cartola de Movimientos",l,re.IGNORECASE):
+            parsed,new_i=parse_movements_in_block(lines,i+1,registro["Nombre"],rut_global,cuenta_global)
             movs.extend(parsed)
-            i = new_i
+            i=new_i
         else:
-            i += 1
-    return cartera, movs
+            i+=1
+    return cartera,movs
 
 def main():
-    all_cartera = []
-    all_movs = []
+    all_cartera=[]
+    all_movs=[]
     for fname in os.listdir(FOLDER_INPUT):
-        if fname.lower().endswith((".pdf", ".txt")):
-            fpath = os.path.join(FOLDER_INPUT, fname)
-            c, m = process_file_to_data(fpath)
+        if fname.lower().endswith((".pdf",".txt")):
+            fpath=os.path.join(FOLDER_INPUT,fname)
+            c,m=process_file_to_data(fpath)
             all_cartera.extend(c)
             all_movs.extend(m)
     if not all_cartera and not all_movs:
         return
-    df_cartera = pd.DataFrame(all_cartera)
-    df_movs = pd.DataFrame(all_movs)
-    cartera_cols = [
-        "Fecha","Nombre","RUT","Cuenta","Nemotecnico","Moneda","ISIN","CUSIP",
-        "Cantidad","Precio_Mercado","Valor_Mercado","Precio_Compra","Valor_Compra",
-        "interes_Acum","Contraparte","Clase_Activo"
-    ]
+    df_cartera=pd.DataFrame(all_cartera)
+    df_movs=pd.DataFrame(all_movs)
+    cartera_cols=["Fecha","Nombre","RUT","Cuenta","Nemotecnico","Moneda","ISIN","CUSIP","Cantidad","Precio_Mercado","Valor_Mercado","Precio_Compra","Valor_Compra","interes_Acum","Contraparte","Clase_Activo"]
     for col in cartera_cols:
         if col not in df_cartera.columns:
-            df_cartera[col] = ""
-    df_cartera = df_cartera[cartera_cols]
-    movs_cols = [
-        "Fecha Movimiento","Fecha Liquidación","Nombre","RUT","Cuenta","Nemotecnico",
-        "Moneda","ISIN","CUSIP","Cantidad","Precio","Monto","Comision","tipo",
-        "descripcion","Concepto","Folio","Contraparte"
-    ]
+            df_cartera[col]=""
+    df_cartera=df_cartera[cartera_cols]
+    movs_cols=["Fecha Movimiento","Fecha Liquidación","Nombre","RUT","Cuenta","Nemotecnico","Moneda","ISIN","CUSIP","Cantidad","Precio","Monto","Comision","tipo","descripcion","Concepto","Folio","Contraparte"]
     for col in movs_cols:
         if col not in df_movs.columns:
-            df_movs[col] = ""
-    df_movs = df_movs[movs_cols]
-    numeric_cols_cartera = ["Cantidad", "Precio_Mercado", "Valor_Mercado", "Precio_Compra"]
+            df_movs[col]=""
+    df_movs=df_movs[movs_cols]
+    numeric_cols_cartera=["Cantidad","Precio_Mercado","Valor_Mercado","Precio_Compra"]
     for col in numeric_cols_cartera:
-        df_cartera[col] = pd.to_numeric(df_cartera[col], errors="coerce")
-    numeric_cols_movs = ["Cantidad", "Precio", "Monto"]
+        df_cartera[col]=pd.to_numeric(df_cartera[col],errors="coerce")
+    numeric_cols_movs=["Cantidad","Precio","Monto"]
     for col in numeric_cols_movs:
-        df_movs[col] = pd.to_numeric(df_movs[col], errors="coerce")
-    today_str = datetime.datetime.today().strftime("%Y%m%d")
-    out_file = os.path.join(FOLDER_OUTPUT, f"InformeBTG_{today_str}.xlsx")
-    with pd.ExcelWriter(out_file, engine="xlsxwriter") as writer:
+        df_movs[col]=pd.to_numeric(df_movs[col],errors="coerce")
+    if not df_cartera.empty and df_cartera["Fecha"].iloc[0]!="":
+        if isinstance(df_cartera["Fecha"].iloc[0],datetime.date):
+            df_cartera["Fecha"]=pd.to_datetime(df_cartera["Fecha"])
+        file_date=df_cartera["Fecha"].iloc[0].strftime("%Y%m%d")
+    else:
+        file_date=datetime.datetime.today().strftime("%Y%m%d")
+    out_file=os.path.join(FOLDER_OUTPUT,f"InformeBTG_{file_date}.xlsx")
+    with pd.ExcelWriter(out_file,engine="xlsxwriter",date_format="dd/mm/yyyy",datetime_format="dd/mm/yyyy") as writer:
         if not df_cartera.empty:
-            df_cartera.to_excel(writer, sheet_name="Cartera", index=False)
-            workbook = writer.book
-            worksheet = writer.sheets["Cartera"]
-            worksheet.set_column(df_cartera.columns.get_loc("Cantidad"),
-                                 df_cartera.columns.get_loc("Cantidad"),
-                                 None, workbook.add_format({'num_format': '0.0000'}))
-            worksheet.set_column(df_cartera.columns.get_loc("Precio_Mercado"),
-                                 df_cartera.columns.get_loc("Precio_Mercado"),
-                                 None, workbook.add_format({'num_format': '0.0000'}))
-            worksheet.set_column(df_cartera.columns.get_loc("Precio_Compra"),
-                                 df_cartera.columns.get_loc("Precio_Compra"),
-                                 None, workbook.add_format({'num_format': '0.0000'}))
-            usd_format_valormercado = workbook.add_format({'num_format': '0.00'})
-            clp_format_valormercado = workbook.add_format({'num_format': '0'})
-            moneda_col_c = df_cartera.columns.get_loc("Moneda")
-            valor_col_c = df_cartera.columns.get_loc("Valor_Mercado")
-            for row_num, row_data in enumerate(df_cartera.itertuples(index=False), start=1):
-                currency = row_data[moneda_col_c]
-                valor = row_data[valor_col_c]
+            df_cartera.to_excel(writer,sheet_name="Cartera",index=False)
+            workbook=writer.book
+            worksheet=writer.sheets["Cartera"]
+            date_format=workbook.add_format({"num_format":"dd/mm/yyyy"})
+            worksheet.set_column(df_cartera.columns.get_loc("Fecha"),df_cartera.columns.get_loc("Fecha"),None,date_format)
+            worksheet.set_column(df_cartera.columns.get_loc("Cantidad"),df_cartera.columns.get_loc("Cantidad"),None,workbook.add_format({"num_format":"0.0000"}))
+            worksheet.set_column(df_cartera.columns.get_loc("Precio_Mercado"),df_cartera.columns.get_loc("Precio_Mercado"),None,workbook.add_format({"num_format":"0.0000"}))
+            worksheet.set_column(df_cartera.columns.get_loc("Precio_Compra"),df_cartera.columns.get_loc("Precio_Compra"),None,workbook.add_format({"num_format":"0.0000"}))
+            usd_format_valormercado=workbook.add_format({"num_format":"0.00"})
+            clp_format_valormercado=workbook.add_format({"num_format":"0"})
+            moneda_col_c=df_cartera.columns.get_loc("Moneda")
+            valor_col_c=df_cartera.columns.get_loc("Valor_Mercado")
+            for row_num,row_data in enumerate(df_cartera.itertuples(index=False),start=1):
+                currency=row_data[moneda_col_c]
+                valor=row_data[valor_col_c]
                 if pd.notnull(valor):
-                    if str(currency).upper() == "USD":
-                        worksheet.write_number(row_num, valor_col_c, valor, usd_format_valormercado)
+                    if str(currency).upper()=="USD":
+                        worksheet.write_number(row_num,valor_col_c,valor,usd_format_valormercado)
                     else:
-                        worksheet.write_number(row_num, valor_col_c, valor, clp_format_valormercado)
+                        worksheet.write_number(row_num,valor_col_c,valor,clp_format_valormercado)
         if not df_movs.empty:
-            df_movs.to_excel(writer, sheet_name="Movimientos", index=False)
-            workbook = writer.book
-            worksheet = writer.sheets["Movimientos"]
-            worksheet.set_column(df_movs.columns.get_loc("Cantidad"),
-                                 df_movs.columns.get_loc("Cantidad"),
-                                 None, workbook.add_format({'num_format': '0.0000'}))
-            worksheet.set_column(df_movs.columns.get_loc("Precio"),
-                                 df_movs.columns.get_loc("Precio"),
-                                 None, workbook.add_format({'num_format': '0.0000'}))
-            usd_format_monto = workbook.add_format({'num_format': '0.00'})
-            clp_format_monto = workbook.add_format({'num_format': '0'})
-            moneda_col_m = df_movs.columns.get_loc("Moneda")
-            monto_col_m = df_movs.columns.get_loc("Monto")
-            for row_num, row_data in enumerate(df_movs.itertuples(index=False), start=1):
-                currency = row_data[moneda_col_m]
-                monto_val = row_data[monto_col_m]
+            df_movs.to_excel(writer,sheet_name="Movimientos",index=False)
+            workbook=writer.book
+            worksheet=writer.sheets["Movimientos"]
+            worksheet.set_column(df_movs.columns.get_loc("Cantidad"),df_movs.columns.get_loc("Cantidad"),None,workbook.add_format({"num_format":"0.0000"}))
+            worksheet.set_column(df_movs.columns.get_loc("Precio"),df_movs.columns.get_loc("Precio"),None,workbook.add_format({"num_format":"0.0000"}))
+            usd_format_monto=workbook.add_format({"num_format":"0.00"})
+            clp_format_monto=workbook.add_format({"num_format":"0"})
+            moneda_col_m=df_movs.columns.get_loc("Moneda")
+            monto_col_m=df_movs.columns.get_loc("Monto")
+            for row_num,row_data in enumerate(df_movs.itertuples(index=False),start=1):
+                currency=row_data[moneda_col_m]
+                monto_val=row_data[monto_col_m]
                 if pd.notnull(monto_val):
-                    worksheet.write_number(row_num, monto_col_m, monto_val,
-                        usd_format_monto if str(currency).upper() == "USD" else clp_format_monto)
+                    if str(currency).upper()=="USD":
+                        worksheet.write_number(row_num,monto_col_m,monto_val,usd_format_monto)
+                    else:
+                        worksheet.write_number(row_num,monto_col_m,monto_val,clp_format_monto)
     print(f"Informe generado: {out_file} a las {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
