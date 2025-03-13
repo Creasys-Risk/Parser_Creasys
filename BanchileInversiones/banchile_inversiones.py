@@ -543,7 +543,7 @@ if __name__ == "__main__":
                     pass
 
         fecha_formateada = fecha_informe.strftime("%Y%m%d")
-        output_path = os.path.join(folder_output, f"InformeBanChileInversiones_{fecha_formateada}.xlsx")
+        output_path = os.path.join(folder_output, f"Informe_{fecha_formateada}.xlsx")
         with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
             if all_cartera:
                 df_cartera = pd.DataFrame(all_cartera)
