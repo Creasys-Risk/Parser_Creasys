@@ -144,9 +144,6 @@ def JPM_Parser(filename: str):
         page = reader.pages[page_num]
         text += page.extract_text()
 
-    with open("output_jp_morgan.txt", "w", encoding="UTF-8") as f:
-        f.write(text)
-
     if "ACCT." in text:
         _,account = text.split("ACCT. ", maxsplit=1)
         account,_ = account.split("\n", maxsplit=1)
