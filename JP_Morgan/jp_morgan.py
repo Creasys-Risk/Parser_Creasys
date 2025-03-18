@@ -1,4 +1,5 @@
 import datetime
+from pathlib import Path
 import re
 import pandas as pd
 from PyPDF2 import PdfReader
@@ -135,53 +136,56 @@ def Extract_Fixed_Income(text: str, filename: str, account: str, date: datetime.
 
     return results
 
-def JPM_Parser(filename: str):
-    reader = PdfReader(f"./input/{filename}.pdf")
+def JPM_Parser(input: Path, output: Path):
+    results = []
 
-    text = ''
+    for file in input.iterdir():
+        if file.name == ".gitkeep": 
+            continue
 
-    for page_num in range(len(reader.pages)):
-        page = reader.pages[page_num]
-        text += page.extract_text()
+        filename = file.name
+        filename,_ = filename.split(".pdf")
 
-    if "ACCT." in text:
-        _,account = text.split("ACCT. ", maxsplit=1)
-        account,_ = account.split("\n", maxsplit=1)
-    elif "Primary Account:" in text:
-        _,account = text.split("Primary Account: ", maxsplit=1)
-        account,_ = account.split("\n", maxsplit=1)
-    else:
-        _,account = text.split("²", maxsplit=1)
-        account,_ = account.split("\n", maxsplit=1)
+        reader = PdfReader(file)
 
-    _,date_aux = text.split("For the Period ", maxsplit=1)
-    date_aux,_ = date_aux.split("\n", maxsplit=1)
-    date_aux = date_aux.split(" ")
-    date_aux = date_aux[2]
+        text = ''
 
-    month,day,year = date_aux.split("/")
-    day = int(day)
-    month = int(month)
-    year = int(f"20{year}")
+        for page_num in range(len(reader.pages)):
+            page = reader.pages[page_num]
+            text += page.extract_text()
 
-    date = datetime.date(year, month, day)
+        if "ACCT." in text:
+            _,account = text.split("ACCT. ", maxsplit=1)
+            account,_ = account.split("\n", maxsplit=1)
+        elif "Primary Account:" in text:
+            _,account = text.split("Primary Account: ", maxsplit=1)
+            account,_ = account.split("\n", maxsplit=1)
+        else:
+            _,account = text.split("²", maxsplit=1)
+            account,_ = account.split("\n", maxsplit=1)
 
-    results_equity = Extract_Equity(text, filename, account, date)
-    results_fixed_income = Extract_Fixed_Income(text, filename, account, date)
+        _,date_aux = text.split("For the Period ", maxsplit=1)
+        date_aux,_ = date_aux.split("\n", maxsplit=1)
+        date_aux = date_aux.split(" ")
+        date_aux = date_aux[2]
 
-    results = results_equity + results_fixed_income
+        month,day,year = date_aux.split("/")
+        day = int(day)
+        month = int(month)
+        year = int(f"20{year}")
+
+        date = datetime.date(year, month, day)
+
+        results_equity = Extract_Equity(text, filename, account, date)
+        results_fixed_income = Extract_Fixed_Income(text, filename, account, date)
+
+        results += results_equity 
+        results += results_fixed_income
 
     if len(results) > 0:
-        df = pd.DataFrame(results_equity + results_fixed_income)
-        df.to_excel(f"./output/{filename}.xlsx", index=False, engine="openpyxl")
+        df_cartera = pd.DataFrame(results)
+        with pd.ExcelWriter(output / f"InformeJPM_{date.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+            df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
 
 if __name__ == "__main__":
-    import os
-
-    files = os.listdir("./input")
-
-    for file in files:
-        if file == ".gitkeep":
-            continue
-        filename,_ = file.split('.pdf')
-        JPM_Parser(filename)
+    JPM_Parser(Path("input"), Path("output"))
