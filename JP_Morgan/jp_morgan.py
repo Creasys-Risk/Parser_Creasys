@@ -6,7 +6,7 @@ from PyPDF2 import PdfReader
 
 def Extract_Equity(text: str, filename: str, account: str, date: datetime.date) -> list[dict]:
     if "Equity Detail\n" not in text:
-        print(f"No se encontró información de Equity en el archivo: {filename}.pdf")
+        print(f"No se encontró información de Equity en el archivo: {filename}")
         return []
 
     _,data = text.split("Equity Detail\n")
@@ -58,7 +58,7 @@ def Extract_Equity(text: str, filename: str, account: str, date: datetime.date) 
 
 def Extract_Fixed_Income(text: str, filename: str, account: str, date: datetime.date) -> list[dict]:
     if "Cash & Fixed Income Detail" not in text:
-        print(f"No se encontró información de Fixed Income en el archivo: {filename}.pdf")
+        print(f"No se encontró información de Fixed Income en el archivo: {filename}")
         return []
     
     _,data = text.split("Cash & Fixed Income Detail")
@@ -143,9 +143,6 @@ def JPM_Parser(input: Path, output: Path):
         if file.name == ".gitkeep": 
             continue
 
-        filename = file.name
-        filename,_ = filename.split(".pdf")
-
         reader = PdfReader(file)
 
         text = ''
@@ -176,8 +173,8 @@ def JPM_Parser(input: Path, output: Path):
 
         date = datetime.date(year, month, day)
 
-        results_equity = Extract_Equity(text, filename, account, date)
-        results_fixed_income = Extract_Fixed_Income(text, filename, account, date)
+        results_equity = Extract_Equity(text, file.name, account, date)
+        results_fixed_income = Extract_Fixed_Income(text, file.name, account, date)
 
         results += results_equity 
         results += results_fixed_income
