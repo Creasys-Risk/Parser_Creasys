@@ -361,7 +361,7 @@ def Bice_parser(input: Path, output: Path):
     df_cartera = pd.DataFrame(info_cartera)
     df_movimientos = pd.DataFrame(info_movimientos)
 
-    with pd.ExcelWriter(output / f"Informe_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+    with pd.ExcelWriter(output / f"InformeBICE_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
         df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
         df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
 

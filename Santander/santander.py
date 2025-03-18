@@ -1,5 +1,6 @@
 from datetime import date
 import os
+from pathlib import Path
 import re
 
 from PyPDF2 import PdfReader
@@ -195,66 +196,67 @@ def process_movements(rows: list[str], nombre: str, cuenta: str, fecha: date):
 
     return cartera_movimientos
 
-folder_input = "./Input/"
-folder_output = "./Output/"
+def Santander_Parser(input: Path, output: Path):
+    info_cartera: list[dict] = []
+    info_movimientos: list[dict] = []
+    fecha: date
 
-files = [f for f in os.listdir(folder_input) if '.pdf' in f]
-
-info_cartera: list[dict] = []
-info_movimientos: list[dict] = []
-
-for file in files:
-    filename,_ = file.split('.pdf')
-    reader = PdfReader(folder_input+file)
-
-    text = ''
-
-    for page_num in range(len(reader.pages)):
-        page = reader.pages[page_num]
-        text += page.extract_text()
-
-    with open(f"{folder_output}{filename}.txt", "w", encoding="utf-8") as f:
-        f.write(text)
-
-    _,aux = text.split("Global Vision of the Market and Your Account ")
-    aux,_ = aux.split("\n", maxsplit=1)
-    _,aux = aux.split(" to ")
-    aux = aux.replace(" - ", " ")
-    aux = aux.split(" ")
-    
-    day, month, year = aux[0].split("-")
-    fecha = date(int(f"20{year}"), calendar_mini[month], int(day))
-    cuenta= aux[1]
-    nombre = " ".join(aux[2:])
-
-    data_cartera = text.split("Total(%)\n")
-
-    for table in data_cartera[1:]:
-        rows = table.split("\n")
-
-        if "CASH" in rows[0]:
+    for file in input.iterdir():
+        if ".pdf" not in file.name:
             continue
-        if "ANNUAL" in rows[1]:
-            info = process_bonds(rows, nombre, cuenta, fecha)
-        else:
-            info = process_funds(rows, nombre, cuenta, fecha)
+
+        reader = PdfReader(file)
+
+        text = ''
+
+        for page_num in range(len(reader.pages)):
+            page = reader.pages[page_num]
+            text += page.extract_text()
+
+        _,aux = text.split("Global Vision of the Market and Your Account ")
+        aux,_ = aux.split("\n", maxsplit=1)
+        _,aux = aux.split(" to ")
+        aux = aux.replace(" - ", " ")
+        aux = aux.split(" ")
         
-        info_cartera += info
+        day, month, year = aux[0].split("-")
+        fecha = date(int(f"20{year}"), calendar_mini[month], int(day))
+        cuenta= aux[1]
+        nombre = " ".join(aux[2:])
 
-    data_movimientos = text.split("Transactions\nDetail ccy. Value Date Booking Date Deposit Withdraws Balance\n")
-    del data_movimientos[0]
+        data_cartera = text.split("Total(%)\n")
 
-    for table in data_movimientos:
-        rows,_ = table.split("\nPlease see important information on the last page")
-        rows = rows.split("\n")
-        
-        info = process_movements(rows, nombre, cuenta, fecha)
+        for table in data_cartera[1:]:
+            rows = table.split("\n")
 
-        info_movimientos += info
+            if "CASH" in rows[0]:
+                continue
+            if "ANNUAL" in rows[1]:
+                info = process_bonds(rows, nombre, cuenta, fecha)
+            else:
+                info = process_funds(rows, nombre, cuenta, fecha)
+            
+            info_cartera += info
 
-df_cartera = pd.DataFrame(info_cartera)
-df_movimientos = pd.DataFrame(info_movimientos)
+        data_movimientos = text.split("Transactions\nDetail ccy. Value Date Booking Date Deposit Withdraws Balance\n")
+        del data_movimientos[0]
 
-with pd.ExcelWriter(f"./output/Informe_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
-    df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
-    df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
+        for table in data_movimientos:
+            rows,_ = table.split("\nPlease see important information on the last page")
+            rows = rows.split("\n")
+            
+            info = process_movements(rows, nombre, cuenta, fecha)
+
+            info_movimientos += info
+
+    df_cartera = pd.DataFrame(info_cartera)
+    df_movimientos = pd.DataFrame(info_movimientos)
+
+    with pd.ExcelWriter(output / f"InformeSantander_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+        df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
+        df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
+
+if __name__ == "__main__":
+    folder_input = Path("Input")
+    folder_output = Path("Output")
+    Santander_Parser(folder_input, folder_output)
