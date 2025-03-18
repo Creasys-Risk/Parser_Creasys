@@ -7,7 +7,7 @@ from pathlib import Path
 import threading
 
 class ParserApp:
-    def __init__(self, ventana):
+    def __init__(self, ventana: tk.Tk):
         self.ventana = ventana
         self.ventana.title("Parser Creasys")
         self.ventana.configure(bg='#f0f0f0')
@@ -110,10 +110,10 @@ class ParserApp:
                 instituciones_presentes.append(entry.name)
 
         for institucion in instituciones_presentes:
-            script_path = self.base_dir / institucion / self.scripts[institucion]
+            script_path: Path = self.base_dir / institucion / self.scripts[institucion]
             script_existe = script_path.exists()
             
-            user_institucion_dir = user_root / institucion
+            user_institucion_dir: Path = user_root / institucion
             pdfs = list(user_institucion_dir.glob('*.pdf'))
             tiene_pdfs = len(pdfs) > 0
             
@@ -142,9 +142,9 @@ class ParserApp:
     def procesar_institucion(self, institucion):
         try:
             script_dir = self.base_dir / institucion
-            user_dir = Path(self.carpeta_raiz) / institucion
-            input_dir = script_dir / 'input'
-            output_dir = script_dir / 'output'
+            user_dir: Path = Path(self.carpeta_raiz) / institucion
+            input_dir: Path = script_dir / 'input'
+            output_dir: Path = script_dir / 'output'
 
             input_dir.mkdir(parents=True, exist_ok=True)
             output_dir.mkdir(parents=True, exist_ok=True)

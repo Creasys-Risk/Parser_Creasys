@@ -4,3 +4,7 @@
 *.pdf
 /Cartolas
 /.venv
+/build
+/dist
+*.exe
+*.spec
