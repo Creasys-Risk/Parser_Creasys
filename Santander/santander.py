@@ -2,7 +2,6 @@ from datetime import date
 import os
 from pathlib import Path
 import re
-
 from PyPDF2 import PdfReader
 import pandas as pd
 
@@ -241,6 +240,22 @@ def Santander_Parser(input: Path, output: Path):
         data_movimientos = text.split("Transactions\nDetail ccy. Value Date Booking Date Deposit Withdraws Balance\n")
         del data_movimientos[0]
 
-with pd.ExcelWriter(f"./output/Informe_{fecha.strftime('%Y%m%d')}.xlsx", engine="openpyxl") as writer:
-    df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
-    df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
+        for table in data_movimientos:
+            rows,_ = table.split("\nPlease see important information on the last page")
+            rows = rows.split("\n")
+            
+            info = process_movements(rows, nombre, cuenta, fecha)
+
+            info_movimientos += info
+
+    df_cartera = pd.DataFrame(info_cartera)
+    df_movimientos = pd.DataFrame(info_movimientos)
+
+    with pd.ExcelWriter(output / f"InformeSantander_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+        df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
+        df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
+
+if __name__ == "__main__":
+    folder_input = Path("Input")
+    folder_output = Path("Output")
+    Santander_Parser(folder_input, folder_output)

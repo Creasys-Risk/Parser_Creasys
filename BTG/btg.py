@@ -545,7 +545,7 @@ def parse_movements_in_block(lines: list, start_idx: int, nombre: str, rut: str,
     
     return movs, i
 
-def process_file_to_data(file_path: Path, output_txt: Path) -> tuple:
+def process_file_to_data(file_path: Path) -> tuple:
     if file_path.suffix.lower() == ".pdf":
         text = extract_text_from_pdf(file_path)
     else:
@@ -553,11 +553,6 @@ def process_file_to_data(file_path: Path, output_txt: Path) -> tuple:
             text = f.read()
     
     text = fix_section_headers(text)
-    base_name = file_path.name
-    dbg_txt_path = output_txt / f"{base_name}.txt"
-    
-    with open(dbg_txt_path, "w", encoding="utf-8") as dbg:
-        dbg.write(text)
     
     fecha_obj, nombre_global, rut_global, cuenta_global = get_metadata_block(text)
     fecha_obj = fecha_obj or ""
@@ -608,12 +603,10 @@ def process_file_to_data(file_path: Path, output_txt: Path) -> tuple:
 def process_btg_files(input_path: Path, output_path: Path):
     all_cartera = []
     all_movs = []
-    txt_folder = output_path / "Textos"
-    txt_folder.mkdir(parents=True, exist_ok=True)
     
     for f in input_path.iterdir():
         if f.is_file() and f.suffix.lower() in (".pdf", ".txt"):
-            cartera, movs = process_file_to_data(f, txt_folder)
+            cartera, movs = process_file_to_data(f)
             all_cartera.extend(cartera)
             all_movs.extend(movs)
     
@@ -697,9 +690,8 @@ def process_btg_files(input_path: Path, output_path: Path):
                 else:
                     worksheet.write(idx+1, 11, row["Monto"], clp_format)
 
-def BTG_Parser(input_path: Path, output_path: Path):
-    output_path.mkdir(parents=True, exist_ok=True)
-    process_btg_files(input_path, output_path)
+def BTG_Parser(input: Path, output: Path):
+    process_btg_files(input, output)
 
 if __name__ == "__main__":
     BTG_Parser(Path("Input"), Path("Output"))

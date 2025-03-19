@@ -21,14 +21,11 @@ def parse_number(num_str, is_percentage=False):
     except InvalidOperation:
         return Decimal("0")
 
-def extract_text_from_pdf(file_path: Path, pass_key: str, pass_dict: dict, txt_path: Path):
+def extract_text_from_pdf(file_path: Path, pass_key: str, pass_dict: dict):
     reader = PdfReader(file_path)
     if reader.is_encrypted:
         reader.decrypt(pass_dict.get(pass_key, ""))
-    text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    with open(txt_path, "w", encoding="utf-8") as f:
-        f.write(text)
-    return text
+    return "\n".join(page.extract_text() or "" for page in reader.pages)
 
 def clean_nemotecnico(nemo: str) -> str:
     nemo = re.sub(r"\([^)]*\d{2}/\d{2}/\d{4}[^)]*\)", "", nemo)
@@ -85,9 +82,7 @@ def parse_rfi_two_lines(line1: str, line2_combined: str) -> dict:
         "Moneda": moneda
     }
 
-def process_single_file(file: Path, folder_txt: Path, pass_dict: dict):
-    txt_path = folder_txt / f"{file.stem}.txt"
-    
+def process_single_file(file: Path, pass_dict: dict):
     if not file.exists():
         raise FileNotFoundError(f"No existe {file.name}")
 
@@ -97,11 +92,7 @@ def process_single_file(file: Path, folder_txt: Path, pass_dict: dict):
     except IndexError:
         pass_key = ""
 
-    if txt_path.exists():
-        with open(txt_path, "r", encoding="utf-8") as f:
-            text = f.read()
-    else:
-        text = extract_text_from_pdf(file, pass_key, pass_dict, txt_path)
+    text = extract_text_from_pdf(file, pass_key, pass_dict)
 
     nombre_match = re.search(r"ancla:.*\|.*\|.*\n([A-ZÑÁÉÍÓÚ ]+)", text)
     nombre = " ".join(nombre_match.group(1).split()) if nombre_match else "Desconocido"
@@ -323,7 +314,6 @@ def process_single_file(file: Path, folder_txt: Path, pass_dict: dict):
                             break
                         record_line += " " + nxt
                         j += 1
-
                     parts = [p.strip() for p in re.split(r"\$", record_line) if p.strip()]
                     if len(parts) >= 5:
                         p0 = parts[0].split()
@@ -342,7 +332,6 @@ def process_single_file(file: Path, folder_txt: Path, pass_dict: dict):
                                     t_compra = percentages[0]
                                 if len(percentages) >= 2:
                                     t_emision, t_compra = percentages[0], percentages[1]
-
                         valor_nominal = parts[1]
                         p2 = parts[2].split()
                         monto_inicio = p2[0] if p2 else ""
@@ -350,7 +339,6 @@ def process_single_file(file: Path, folder_txt: Path, pass_dict: dict):
                         valor_actual = parts[3]
                         p4 = parts[4].split()
                         nemotecnico = " ".join(p4[1:]) if len(p4) >= 2 else parts[4]
-
                         rec_fecha = fecha_dt.strftime("%d/%m/%Y") if fecha_dt else ""
                         record = {
                             "Fecha": rec_fecha,
@@ -403,7 +391,6 @@ def process_single_file(file: Path, folder_txt: Path, pass_dict: dict):
                         cartera.append(record)
                     i += 1
                     continue
-
         elif mode == "movimientos":
             if date_pat.match(line) or dividend_pat.match(line):
                 consolidated = [line]
@@ -414,7 +401,6 @@ def process_single_file(file: Path, folder_txt: Path, pass_dict: dict):
                         break
                     consolidated[-1] += " " + l2
                     i2 += 1
-
                 rec_line = consolidated[0]
                 if dividend_pat.match(rec_line):
                     fecha_mov = fecha_liq = "??/??/????"
@@ -505,9 +491,6 @@ def process_single_file(file: Path, folder_txt: Path, pass_dict: dict):
 def BanChile_Parser(input: Path, output: Path):
     results_cartera = []
     results_movimientos = []
-    folder_txt = output / "Textos"
-    folder_txt.mkdir(parents=True, exist_ok=True)
-
     pass_dict = {}
     pass_path = input / "pass.txt"
     if pass_path.exists():
@@ -519,7 +502,7 @@ def BanChile_Parser(input: Path, output: Path):
 
     for file in input.glob("*.pdf"):
         try:
-            cartera, movimientos, _ = process_single_file(file, folder_txt, pass_dict)
+            cartera, movimientos, _ = process_single_file(file, pass_dict)
             results_cartera.extend(cartera)
             results_movimientos.extend(movimientos)
         except Exception as e:
@@ -581,7 +564,6 @@ def BanChile_Parser(input: Path, output: Path):
                                 cell_format = workbook.add_format({'num_format': num_format})
                                 worksheet.write_number(row_idx, col_idx, float(value), cell_format)
 
-        print(f"Informe generado: {output_path}")
     else:
         print("No se encontraron datos para generar el informe")
 

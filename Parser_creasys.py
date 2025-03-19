@@ -1,10 +1,14 @@
 import os
 import tkinter as tk
 from tkinter import ttk, messagebox, filedialog
-import subprocess
-import shutil
 from pathlib import Path
 import threading
+from BTG.btg import BTG_Parser
+from BanchileInversiones.banchile_inversiones import BanChile_Parser
+from Security.security import Security_Parser
+from Santander.santander import Santander_Parser
+from Bice.bice import Bice_parser
+from JP_Morgan.jp_morgan import JPM_Parser
 
 class ParserApp:
     def __init__(self, ventana: tk.Tk):
@@ -12,12 +16,12 @@ class ParserApp:
         self.ventana.title("Parser Creasys")
         self.ventana.configure(bg='#f0f0f0')
         self.scripts = {
-            'BTG': 'btg.py',
-            'BanchileInversiones': 'banchile_inversiones.py',
-            'Security': 'security.py',
-            'Santander': 'santander.py',
-            'Bice': 'bice.py',
-            'JP Morgan': 'jp_morgan.py',
+            'BTG': BTG_Parser,
+            'BanchileInversiones': BanChile_Parser,
+            'Security': Security_Parser,
+            'Santander': Santander_Parser,
+            'Bice': Bice_parser,
+            'JP Morgan': JPM_Parser,
         }
         self.carpeta_raiz = None
         self.proceso_activo = False
@@ -145,30 +149,24 @@ class ParserApp:
                 self.ventana.after(0, self.lbl_proceso.config, {'text': f"Procesando: {institucion}..."})
                 self.ventana.after(0, self.actualizar_estado_institucion, institucion, "Procesando...")
                 try:
-                    script_dir = self.base_dir / institucion
                     user_dir: Path = Path(self.carpeta_raiz) / institucion
-                    input_dir: Path = script_dir / 'input'
-                    output_dir: Path = script_dir / 'output'
-                    input_dir.mkdir(parents=True, exist_ok=True)
-                    output_dir.mkdir(parents=True, exist_ok=True)
-                    archivos = list(user_dir.glob('*.pdf')) + list(user_dir.glob('*.txt'))
-                    if not archivos: raise Exception("No hay archivos para procesar")
-                    for archivo in archivos: shutil.copy2(archivo, input_dir / archivo.name)
-                    proceso = subprocess.run(['python', script_dir / self.scripts[institucion]], cwd=script_dir,
-                                           capture_output=True, text=True, check=True)
-                    excels = list(output_dir.glob('*.xlsx'))
-                    if not excels: raise Exception(f"Error: {proceso.stderr[:100]}...")
-                    shutil.move(excels[0], user_dir / excels[0].name)
+                    pdfs = list(user_dir.glob('*.pdf'))
+                    if not pdfs:
+                        raise Exception("No hay archivos PDF para procesar")
+                    
+                    parser_func = self.scripts.get(institucion)
+                    if not parser_func:
+                        raise Exception(f"Parser no disponible para {institucion}")
+                    
+                    parser_func(input=user_dir, output=user_dir)
+                    
+                    excels = list(user_dir.glob('*.xlsx'))
+                    if not excels:
+                        raise Exception("No se generó archivo de salida")
+                    
                     self.ventana.after(0, self.actualizar_estado_institucion, institucion, "Procesado correctamente", 'procesado')
-                except subprocess.CalledProcessError as e:
-                    self.ventana.after(0, self.actualizar_estado_institucion, institucion, f"Error: {e.stderr[:100]}...", 'error')
                 except Exception as e:
                     self.ventana.after(0, self.actualizar_estado_institucion, institucion, str(e)[:150], 'error')
-                finally:
-                    try:
-                        for f in input_dir.glob('*'): f.unlink(missing_ok=True)
-                        for txt in output_dir.rglob('*.txt'): txt.unlink(missing_ok=True)
-                    except: pass
             self.ventana.after(0, self.finalizar_proceso)
         except Exception as e:
             self.ventana.after(0, messagebox.showerror, "Error", str(e))

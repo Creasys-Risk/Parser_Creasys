@@ -1,35 +1,29 @@
-import os
 import re
 import datetime
 import pandas as pd
 from PyPDF2 import PdfReader
 from pathlib import Path
 
-def process_file_to_data(filepath):
+def process_file_to_data(filepath: Path):
     info_cartera = []
     info_movimientos = []
-    base_name = os.path.splitext(os.path.basename(filepath))[0]
     text = ""
-    if filepath.lower().endswith(".pdf"):
+    
+    if filepath.suffix.lower() == ".pdf":
         reader = PdfReader(filepath)
         for page in reader.pages:
             text += page.extract_text() + "\n"
     else:
-        with open(filepath, "r", encoding="utf-8") as f:
-            text = f.read()
-    out_txt_dir = os.path.join(Path(filepath).parent.parent, "Output", "Textos")
-    os.makedirs(out_txt_dir, exist_ok=True)
-    out_txt_path = os.path.join(out_txt_dir, f"{base_name}.txt")
-    with open(out_txt_path, "w", encoding="utf-8") as out:
-        out.write(text)
+        text = filepath.read_text(encoding="utf-8")
+
     fecha_cartera = ""
     m_fecha = re.search(r"Desde\s+el\s+(\d{2}-\d{2}-\d{4})\s+al\s+(\d{2}-\d{2}-\d{4})", text)
     if m_fecha:
-        fecha_cartera = m_fecha.group(2)
+        fecha_cartera = m_fecha.group(2)    
     nombre = ""
     m_nombre = re.search(r"Nombre\s*:\s*(.+?)\n", text)
     if m_nombre:
-        nombre = m_nombre.group(1).strip()
+        nombre = m_nombre.group(1).strip()   
     rut = ""
     m_rut = re.search(r"Rut\s*:\s*([\d\.\-kK]+)", text)
     if m_rut:
@@ -138,8 +132,7 @@ def process_file_to_data(filepath):
                 "Contraparte": "Security",
                 "Clase_Activo": "Acciones"
             })
-    pattern = r"NOMBRE\s+CUOTA\s+MANDATONUMERO\s*(.*?)(?=^TOTAL\s+\d)"
-    cuotas_block_match = re.search(pattern, text, re.DOTALL | re.MULTILINE)
+    cuotas_block_match = re.search(r"NOMBRE\s+CUOTA\s+MANDATONUMERO\s*(.*?)(?=^TOTAL\s+\d)", text, re.DOTALL | re.MULTILINE)
     if cuotas_block_match:
         bloque_cuotas = cuotas_block_match.group(1)
         for line in bloque_cuotas.splitlines():
@@ -298,69 +291,72 @@ def get_decimal_format(num_str):
 
 def Security_Parser(input: Path, output: Path):
     all_cartera, all_movs = [], []
-    for fname in os.listdir(input):
-        if fname.lower().endswith((".pdf", ".txt")):
-            fpath = os.path.join(input, fname)
-            c, m = process_file_to_data(fpath)
-            all_cartera.extend(c)
-            all_movs.extend(m)
+    
+    for file in input.glob("*"):
+        if file.is_file() and file.suffix.lower() in (".pdf", ".txt"):
+            cartera, movs = process_file_to_data(file)
+            all_cartera.extend(cartera)
+            all_movs.extend(movs)
+    
     if not all_cartera and not all_movs:
         return
+    
     df_cartera = pd.DataFrame(all_cartera)
     df_movs = pd.DataFrame(all_movs)
-    cartera_cols = ["Fecha","Nombre","RUT","Cuenta","Nemotecnico","Moneda","ISIN","CUSIP","Cantidad","Precio_Mercado","Valor_Mercado","Precio_Compra","Valor_Compra","interes_Acum","Contraparte","Clase_Activo"]
-    for col in cartera_cols:
-        if col not in df_cartera.columns:
-            df_cartera[col] = ""
-    df_cartera = df_cartera[cartera_cols]
-    movs_cols = ["Fecha Movimiento","Fecha Liquidación","Nombre","RUT","Cuenta","Nemotecnico","Moneda","ISIN","CUSIP","Cantidad","Precio","Monto","Comision","tipo","descripcion","Concepto","Folio","Contraparte"]
-    for col in movs_cols:
-        if col not in df_movs.columns:
-            df_movs[col] = ""
-    df_movs = df_movs[movs_cols]
+    
+    cartera_cols = ["Fecha","Nombre","RUT","Cuenta","Nemotecnico","Moneda","ISIN","CUSIP","Cantidad",
+                    "Precio_Mercado","Valor_Mercado","Precio_Compra","Valor_Compra","interes_Acum",
+                    "Contraparte","Clase_Activo"]
+    df_cartera = df_cartera.reindex(columns=cartera_cols)
+    
+    movs_cols = ["Fecha Movimiento","Fecha Liquidación","Nombre","RUT","Cuenta","Nemotecnico","Moneda",
+                 "ISIN","CUSIP","Cantidad","Precio","Monto","Comision","tipo","descripcion","Concepto",
+                 "Folio","Contraparte"]
+    df_movs = df_movs.reindex(columns=movs_cols)
+    
     numeric_cols_cartera = ["Cantidad","Precio_Mercado","Valor_Mercado","Precio_Compra","Valor_Compra"]
-    for col in numeric_cols_cartera:
-        df_cartera[col] = pd.to_numeric(df_cartera[col], errors="coerce")
+    df_cartera[numeric_cols_cartera] = df_cartera[numeric_cols_cartera].apply(pd.to_numeric, errors="coerce")
+    
     numeric_cols_movs = ["Cantidad","Precio","Monto","Comision"]
-    for col in numeric_cols_movs:
-        df_movs[col] = pd.to_numeric(df_movs[col], errors="coerce")
+    df_movs[numeric_cols_movs] = df_movs[numeric_cols_movs].apply(pd.to_numeric, errors="coerce")
+    
     fecha_archivo = ""
     if not df_cartera.empty:
         fecha_archivo = df_cartera.iloc[0]["Fecha"]
     elif not df_movs.empty:
         fecha_archivo = df_movs.iloc[0]["Fecha Movimiento"]
-    if fecha_archivo:
-        try:
-            parsed_date = datetime.datetime.strptime(fecha_archivo, "%d-%m-%Y")
-            fecha_str = parsed_date.strftime("%Y%m%d")
-        except:
-            fecha_str = datetime.datetime.today().strftime("%Y%m%d")
-    else:
+    
+    try:
+        parsed_date = datetime.datetime.strptime(fecha_archivo, "%d-%m-%Y")
+        fecha_str = parsed_date.strftime("%Y%m%d")
+    except:
         fecha_str = datetime.datetime.today().strftime("%Y%m%d")
-    os.makedirs(output, exist_ok=True)
-    out_file = os.path.join(output, f"InformeSecurity_{fecha_str}.xlsx")
+    
+    output.mkdir(parents=True, exist_ok=True)
+    out_file = output / f"InformeSecurity_{fecha_str}.xlsx"
+    
     with pd.ExcelWriter(out_file, engine="xlsxwriter") as writer:
         if not df_cartera.empty:
-            df_cartera.to_excel(writer, sheet_name="Cartera", index=False)
+            df_cartera.to_excel(writer, sheet_name="Cartera", index=False)       
         if not df_movs.empty:
             df_movs.to_excel(writer, sheet_name="Movimientos", index=False)
+            workbook = writer.book
             worksheet_mov = writer.sheets["Movimientos"]
-            movs_columns = df_movs.columns.tolist()
+            
             num_fields = {
-                "Cantidad": {"orig": "Cantidad_orig", "col": movs_columns.index("Cantidad")},
-                "Precio": {"orig": "Precio_orig", "col": movs_columns.index("Precio")},
-                "Monto": {"orig": "Monto_orig", "col": movs_columns.index("Monto")},
-                "Comision": {"orig": "Comision_orig", "col": movs_columns.index("Comision")}
+                "Cantidad": {"orig": "Cantidad_orig", "col": df_movs.columns.get_loc("Cantidad")},
+                "Precio": {"orig": "Precio_orig", "col": df_movs.columns.get_loc("Precio")},
+                "Monto": {"orig": "Monto_orig", "col": df_movs.columns.get_loc("Monto")},
+                "Comision": {"orig": "Comision_orig", "col": df_movs.columns.get_loc("Comision")}
             }
-            for row_num, row in df_movs.iterrows():
+            
+            for row_num, (_, row) in enumerate(df_movs.iterrows(), start=1):
                 for field, info in num_fields.items():
                     orig_value = row.get(info["orig"], "")
                     if isinstance(orig_value, str) and orig_value:
                         fmt_str = get_decimal_format(orig_value)
-                        cell_format = writer.book.add_format({'num_format': fmt_str})
-                        col_idx = info["col"]
-                        worksheet_mov.write_number(row_num+1, col_idx, row[field], cell_format)
-    print(f"Informe generado: {out_file} a las {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                        cell_format = workbook.add_format({'num_format': fmt_str})
+                        worksheet_mov.write_number(row_num, info["col"], row[field], cell_format)
 
 if __name__ == "__main__":
     Security_Parser(Path("Input"), Path("Output"))
