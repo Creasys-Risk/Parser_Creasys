@@ -3,9 +3,7 @@ import re
 import datetime
 import pandas as pd
 from PyPDF2 import PdfReader
-
-FOLDER_INPUT = "./Input"
-FOLDER_OUTPUT = "./Output"
+from pathlib import Path
 
 def process_file_to_data(filepath):
     info_cartera = []
@@ -19,7 +17,7 @@ def process_file_to_data(filepath):
     else:
         with open(filepath, "r", encoding="utf-8") as f:
             text = f.read()
-    out_txt_dir = os.path.join(FOLDER_OUTPUT, "Textos")
+    out_txt_dir = os.path.join(Path(filepath).parent.parent, "Output", "Textos")
     os.makedirs(out_txt_dir, exist_ok=True)
     out_txt_path = os.path.join(out_txt_dir, f"{base_name}.txt")
     with open(out_txt_path, "w", encoding="utf-8") as out:
@@ -298,11 +296,11 @@ def get_decimal_format(num_str):
     else:
         return "#,##0"
 
-def main():
+def Security_Parser(input: Path, output: Path):
     all_cartera, all_movs = [], []
-    for fname in os.listdir(FOLDER_INPUT):
+    for fname in os.listdir(input):
         if fname.lower().endswith((".pdf", ".txt")):
-            fpath = os.path.join(FOLDER_INPUT, fname)
+            fpath = os.path.join(input, fname)
             c, m = process_file_to_data(fpath)
             all_cartera.extend(c)
             all_movs.extend(m)
@@ -339,7 +337,8 @@ def main():
             fecha_str = datetime.datetime.today().strftime("%Y%m%d")
     else:
         fecha_str = datetime.datetime.today().strftime("%Y%m%d")
-    out_file = os.path.join(FOLDER_OUTPUT, f"InformeSecurity_{fecha_str}.xlsx")
+    os.makedirs(output, exist_ok=True)
+    out_file = os.path.join(output, f"InformeSecurity_{fecha_str}.xlsx")
     with pd.ExcelWriter(out_file, engine="xlsxwriter") as writer:
         if not df_cartera.empty:
             df_cartera.to_excel(writer, sheet_name="Cartera", index=False)
@@ -364,4 +363,4 @@ def main():
     print(f"Informe generado: {out_file} a las {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 if __name__ == "__main__":
-    main()
+    Security_Parser(Path("Input"), Path("Output"))

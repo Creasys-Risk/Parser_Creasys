@@ -3,18 +3,8 @@ import re
 import datetime
 import pandas as pd
 from decimal import Decimal, InvalidOperation
+from pathlib import Path
 from PyPDF2 import PdfReader
-
-folder_input = "./Input/"
-folder_output = "./Output/"
-folder_txt = "./Output/Textos/"
-os.makedirs(folder_txt, exist_ok=True)
-
-pass_dict = {}
-with open(os.path.join(folder_input, "pass.txt"), "r") as f:
-    for line in f:
-        k, v = line.strip().split(":")
-        pass_dict[k] = v.strip()
 
 def parse_number(num_str, is_percentage=False):
     if not num_str:
@@ -31,12 +21,11 @@ def parse_number(num_str, is_percentage=False):
     except InvalidOperation:
         return Decimal("0")
 
-def extract_text_from_pdf(file_path, pass_key):
+def extract_text_from_pdf(file_path: Path, pass_key: str, pass_dict: dict, txt_path: Path):
     reader = PdfReader(file_path)
     if reader.is_encrypted:
         reader.decrypt(pass_dict.get(pass_key, ""))
     text = "\n".join(page.extract_text() or "" for page in reader.pages)
-    txt_path = os.path.join(folder_txt, os.path.basename(file_path) + ".txt")
     with open(txt_path, "w", encoding="utf-8") as f:
         f.write(text)
     return text
@@ -76,10 +65,7 @@ def parse_rfi_two_lines(line1: str, line2_combined: str) -> dict:
 
     pat_isin = re.compile(r"(ISIN#\S+)", re.IGNORECASE)
     match_isin = pat_isin.search(line2_combined)
-    if match_isin:
-        isin_val = match_isin.group(1).replace("ISIN#", "")
-    else:
-        isin_val = ""
+    isin_val = match_isin.group(1).replace("ISIN#", "") if match_isin else ""
 
     cleaned = re.sub(r"ISIN#\S+", "", line2_combined, flags=re.IGNORECASE)
     cleaned = re.sub(r"[A-Z]{3}\s*[+-]?[\d\.,-]+\s*", "", cleaned, flags=re.IGNORECASE)
@@ -99,22 +85,23 @@ def parse_rfi_two_lines(line1: str, line2_combined: str) -> dict:
         "Moneda": moneda
     }
 
-def BanChile_Parser(filename):
-    pdf_path = os.path.join(folder_input, f"{filename}.pdf")
-    txt_path = os.path.join(folder_txt, f"{filename}.txt")
-    if not os.path.exists(pdf_path):
-        raise FileNotFoundError(f"No existe {filename}.pdf")
+def process_single_file(file: Path, folder_txt: Path, pass_dict: dict):
+    txt_path = folder_txt / f"{file.stem}.txt"
+    
+    if not file.exists():
+        raise FileNotFoundError(f"No existe {file.name}")
 
+    filename_parts = file.stem.split("_")
     try:
-        _, pass_key, _ = filename.split("_", 2)
-    except ValueError:
+        pass_key = filename_parts[1]
+    except IndexError:
         pass_key = ""
 
-    if os.path.exists(txt_path):
+    if txt_path.exists():
         with open(txt_path, "r", encoding="utf-8") as f:
             text = f.read()
     else:
-        text = extract_text_from_pdf(pdf_path, pass_key)
+        text = extract_text_from_pdf(file, pass_key, pass_dict, txt_path)
 
     nombre_match = re.search(r"ancla:.*\|.*\|.*\n([A-ZÑÁÉÍÓÚ ]+)", text)
     nombre = " ".join(nombre_match.group(1).split()) if nombre_match else "Desconocido"
@@ -396,7 +383,6 @@ def BanChile_Parser(filename):
                         valor_mercado_str = split_last[0] if split_last else "0"
                         rest_text = " ".join(split_last[1:]) if len(split_last) > 1 else ""
                         nemotecnico = re.sub(r"\s*\d+([.,]\d+)?%\s*$", "", rest_text).strip()
-
                         rec_fecha = fecha_dt.strftime("%d/%m/%Y") if fecha_dt else ""
                         record = {
                             "Fecha": rec_fecha,
@@ -516,60 +502,53 @@ def BanChile_Parser(filename):
 
     return cartera, movimientos, nombre
 
-if __name__ == "__main__":
-    os.makedirs(folder_output, exist_ok=True)
-    all_cartera = []
-    all_movimientos = []
-    for file in os.listdir(folder_input):
-        if not file.lower().endswith(".pdf"):
-            continue
-        filename_noext = os.path.splitext(file)[0]
-        try:
-            cartera, movimientos, nombre = BanChile_Parser(filename_noext)
-            if cartera:
-                all_cartera.extend(cartera)
-            if movimientos:
-                all_movimientos.extend(movimientos)
-        except Exception as e:
-            print(f"Error procesando {file}: {str(e)}")
-    if all_cartera or all_movimientos:
-        fecha_informe = datetime.datetime.now()
-        if all_cartera:
-            primera_fecha = all_cartera[0].get("Fecha", "")
-            if primera_fecha:
-                try:
-                    fecha_informe = datetime.datetime.strptime(primera_fecha, "%d/%m/%Y")
-                except:
-                    pass
+def BanChile_Parser(input: Path, output: Path):
+    results_cartera = []
+    results_movimientos = []
+    folder_txt = output / "Textos"
+    folder_txt.mkdir(parents=True, exist_ok=True)
 
-        fecha_formateada = fecha_informe.strftime("%Y%m%d")
-        output_path = os.path.join(folder_output, f"Informe_{fecha_formateada}.xlsx")
+    pass_dict = {}
+    pass_path = input / "pass.txt"
+    if pass_path.exists():
+        with open(pass_path, "r") as f:
+            for line in f:
+                if ":" in line:
+                    k, v = line.strip().split(":", 1)
+                    pass_dict[k] = v.strip()
+
+    for file in input.glob("*.pdf"):
+        try:
+            cartera, movimientos, _ = process_single_file(file, folder_txt, pass_dict)
+            results_cartera.extend(cartera)
+            results_movimientos.extend(movimientos)
+        except Exception as e:
+            print(f"Error procesando {file.name}: {str(e)}")
+
+    if results_cartera or results_movimientos:
+        fecha_informe = datetime.datetime.now()
+        if results_cartera:
+            primera_fecha = results_cartera[0].get("Fecha", "")
+            try:
+                fecha_informe = datetime.datetime.strptime(primera_fecha, "%d/%m/%Y")
+            except:
+                pass
+        
+        output_path = output / f"InformeBanChile_{fecha_informe.strftime('%Y%m%d')}.xlsx"
         with pd.ExcelWriter(output_path, engine="xlsxwriter") as writer:
-            if all_cartera:
-                df_cartera = pd.DataFrame(all_cartera)
+            if results_cartera:
+                df_cartera = pd.DataFrame(results_cartera)
                 df_cartera["Rut"] = ""
                 df_cartera["interes_Acum"] = ""
                 final_cols = [
-                    "Fecha",
-                    "Nombre",
-                    "Rut",
-                    "Cuenta",
-                    "Nemotecnico",
-                    "Moneda",
-                    "ISIN",
-                    "CUSIP",
-                    "Cantidad",
-                    "Precio_Mercado",
-                    "Valor_Mercado",
-                    "Precio_Compra",
-                    "Valor_Compra",
-                    "interes_Acum",
-                    "Contraparte",
-                    "Clase_Activo"
+                    "Fecha", "Nombre", "Rut", "Cuenta", "Nemotecnico",
+                    "Moneda", "ISIN", "CUSIP", "Cantidad", "Precio_Mercado",
+                    "Valor_Mercado", "Precio_Compra", "Valor_Compra",
+                    "interes_Acum", "Contraparte", "Clase_Activo"
                 ]
                 df_cartera = df_cartera.reindex(columns=final_cols)
                 df_cartera = df_cartera.dropna(how="all")
-                df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
+                df_cartera.to_excel(writer, index=False, sheet_name="Cartera")                
                 workbook = writer.book
                 worksheet = writer.sheets["Cartera"]
                 numeric_cols = ["Cantidad", "Precio_Mercado", "Valor_Mercado", "Precio_Compra", "Valor_Compra"]
@@ -582,14 +561,10 @@ if __name__ == "__main__":
                                 dec_places = -exponent if exponent < 0 else 0
                                 num_format = "0" + ("." + "0" * dec_places if dec_places > 0 else "")
                                 cell_format = workbook.add_format({'num_format': num_format})
-                                try:
-                                    numeric_val = float(value)
-                                except:
-                                    numeric_val = 0.0
-                                worksheet.write_number(row_idx, col_idx, numeric_val, cell_format)
+                                worksheet.write_number(row_idx, col_idx, float(value), cell_format)
 
-            if all_movimientos:
-                df_movimientos = pd.DataFrame(all_movimientos)
+            if results_movimientos:
+                df_movimientos = pd.DataFrame(results_movimientos)
                 df_movimientos = df_movimientos.dropna(how="all")
                 df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
                 workbook = writer.book
@@ -604,11 +579,11 @@ if __name__ == "__main__":
                                 dec_places = -exponent if exponent < 0 else 0
                                 num_format = "0" + ("." + "0" * dec_places if dec_places > 0 else "")
                                 cell_format = workbook.add_format({'num_format': num_format})
-                                try:
-                                    numeric_val = float(value)
-                                except:
-                                    numeric_val = 0.0
-                                worksheet.write_number(row_idx, col_idx, numeric_val, cell_format)
-        print(output_path)
+                                worksheet.write_number(row_idx, col_idx, float(value), cell_format)
+
+        print(f"Informe generado: {output_path}")
     else:
         print("No se encontraron datos para generar el informe")
+
+if __name__ == "__main__":
+    BanChile_Parser(Path("input"), Path("output"))
