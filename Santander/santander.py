@@ -252,6 +252,11 @@ def Santander_Parser(input: Path, output: Path):
     df_cartera = pd.DataFrame(info_cartera)
     df_movimientos = pd.DataFrame(info_movimientos)
 
-with pd.ExcelWriter(f"./output/Informe_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
-    df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
-    df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
+    with pd.ExcelWriter(f"./output/InformeSantander_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+        df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
+        df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
+
+if __name__ == "__main__":
+    folder_input = Path("Input")
+    folder_output = Path("Output")
+    Santander_Parser(folder_input, folder_output)

@@ -365,49 +365,7 @@ def Bice_parser(input: Path, output: Path):
         df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
         df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
 
-<<<<<<< HEAD
-                    nemotecnico = " ".join(nemotecnico)
-                    row_data = row_data[index_corte:]
-                    row_data = [aux for aux in row_data if aux != '']
-
-                    cantidad = float(row_data[0].replace('.', '').replace(',', '.'))
-                    precio = float(row_data[1].replace('.', '').replace(',', '.'))
-                    monto = float(row_data[2].replace('.', '').replace(',', '.'))
-                    
-                    info_movimientos.append({
-                        "Fecha Movimiento": fecha_movimiento,
-                        "Fecha Liquidación": fecha_movimiento,
-                        "Nombre": nombre,
-                        "RUT": rut,
-                        "Cuenta": cuenta,
-                        "Nemotecnico": nemotecnico,
-                        "Moneda": moneda,
-                        "ISIN": "",
-                        "CUSIP": "",
-                        "Cantidad": cantidad,
-                        "Precio": precio,
-                        "Monto": monto,
-                        "Comision": 0,
-                        "IVA": 0,
-                        "Tipo": clase_activo,
-                        "Descripcion": tipo,
-                        "Concepto": "OPERACIÓN",
-                        "Folio": folio,
-                        "Contraparte": "BICE",
-                    })
-                else:
-                    print(f"Tipo de movimiento desconocido: {clase_activo}")
-                    continue
-
-df_cartera = pd.DataFrame(info_cartera)
-df_movimientos = pd.DataFrame(info_movimientos)
-
-with pd.ExcelWriter(f"./output/Informe_{fecha.strftime('%Y%m%d')}.xlsx", engine="openpyxl") as writer:
-    df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
-    df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
-=======
 if __name__ == "__main__":
     folder_input = Path("Input")
     folder_output = Path("Output")
     Bice_parser(folder_input, folder_output)
->>>>>>> 7a61690ada56e840aaead810565eddb17cc59cb7
