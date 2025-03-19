@@ -8,4 +8,4 @@
 /dist
 *.exe
 *.spec
-/__pycache__
+*/__pycache__
