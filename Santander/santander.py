@@ -241,17 +241,6 @@ def Santander_Parser(input: Path, output: Path):
         data_movimientos = text.split("Transactions\nDetail ccy. Value Date Booking Date Deposit Withdraws Balance\n")
         del data_movimientos[0]
 
-        for table in data_movimientos:
-            rows,_ = table.split("\nPlease see important information on the last page")
-            rows = rows.split("\n")
-            
-            info = process_movements(rows, nombre, cuenta, fecha)
-
-            info_movimientos += info
-
-    df_cartera = pd.DataFrame(info_cartera)
-    df_movimientos = pd.DataFrame(info_movimientos)
-
-with pd.ExcelWriter(f"./output/Informe_{fecha.strftime("%Y%m%d")}.xlsx", engine="openpyxl") as writer:
+with pd.ExcelWriter(f"./output/Informe_{fecha.strftime('%Y%m%d')}.xlsx", engine="openpyxl") as writer:
     df_cartera.to_excel(writer, index=False, sheet_name="Cartera")
     df_movimientos.to_excel(writer, index=False, sheet_name="Movimientos")
