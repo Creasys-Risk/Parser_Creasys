@@ -653,42 +653,44 @@ def process_btg_files(input_path: Path, output_path: Path):
     
     with pd.ExcelWriter(out_file, engine="xlsxwriter", date_format="dd/mm/yyyy", datetime_format="dd/mm/yyyy") as writer:
         if not df_cartera.empty:
-            df_cartera.to_excel(writer, sheet_name="Cartera", index=False)
-            workbook = writer.book
-            worksheet = writer.sheets["Cartera"]
-            
-            date_format = workbook.add_format({"num_format": "dd/mm/yyyy"})
-            num_format_4dec = workbook.add_format({"num_format": "0.0000"})
-            
-            worksheet.set_column("A:A", None, date_format)
-            worksheet.set_column("I:I", None, num_format_4dec)
-            worksheet.set_column("J:J", None, num_format_4dec)
-            worksheet.set_column("L:L", None, num_format_4dec)
-            usd_format = workbook.add_format({"num_format": "#,##0.00"})
-            clp_format = workbook.add_format({"num_format": "#,##0"})
-            
-            for idx, row in df_cartera.iterrows():
-                if row["Moneda"] == "USD":
-                    worksheet.write(idx+1, 10, row["Valor_Mercado"], usd_format)
-                else:
-                    worksheet.write(idx+1, 10, row["Valor_Mercado"], clp_format)
-        
+            df_cartera.to_excel(writer,sheet_name="Cartera",index=False)
+            workbook=writer.book
+            worksheet=writer.sheets["Cartera"]
+            date_format=workbook.add_format({"num_format":"dd/mm/yyyy"})
+            worksheet.set_column(df_cartera.columns.get_loc("Fecha"),df_cartera.columns.get_loc("Fecha"),None,date_format)
+            worksheet.set_column(df_cartera.columns.get_loc("Cantidad"),df_cartera.columns.get_loc("Cantidad"),None,workbook.add_format({"num_format":"0.0000"}))
+            worksheet.set_column(df_cartera.columns.get_loc("Precio_Mercado"),df_cartera.columns.get_loc("Precio_Mercado"),None,workbook.add_format({"num_format":"0.0000"}))
+            worksheet.set_column(df_cartera.columns.get_loc("Precio_Compra"),df_cartera.columns.get_loc("Precio_Compra"),None,workbook.add_format({"num_format":"0.0000"}))
+            usd_format_valormercado=workbook.add_format({"num_format":"0.00"})
+            clp_format_valormercado=workbook.add_format({"num_format":"0"})
+            moneda_col_c=df_cartera.columns.get_loc("Moneda")
+            valor_col_c=df_cartera.columns.get_loc("Valor_Mercado")
+            for row_num,row_data in enumerate(df_cartera.itertuples(index=False),start=1):
+                currency=row_data[moneda_col_c]
+                valor=row_data[valor_col_c]
+                if pd.notnull(valor):
+                    if str(currency).upper()=="USD":
+                        worksheet.write_number(row_num,valor_col_c,valor,usd_format_valormercado)
+                    else:
+                        worksheet.write_number(row_num,valor_col_c,valor,clp_format_valormercado)
         if not df_movs.empty:
-            df_movs.to_excel(writer, sheet_name="Movimientos", index=False)
-            workbook = writer.book
-            worksheet = writer.sheets["Movimientos"]
-            
-            num_format_4dec = workbook.add_format({"num_format": "0.0000"})
-            worksheet.set_column("J:J", None, num_format_4dec)
-            worksheet.set_column("K:K", None, num_format_4dec)
-            usd_format = workbook.add_format({"num_format": "#,##0.00"})
-            clp_format = workbook.add_format({"num_format": "#,##0"})
-            
-            for idx, row in df_movs.iterrows():
-                if row["Moneda"] == "USD":
-                    worksheet.write(idx+1, 11, row["Monto"], usd_format)
-                else:
-                    worksheet.write(idx+1, 11, row["Monto"], clp_format)
+                    df_movs.to_excel(writer,sheet_name="Movimientos",index=False)
+                    workbook=writer.book
+                    worksheet=writer.sheets["Movimientos"]
+                    worksheet.set_column(df_movs.columns.get_loc("Cantidad"),df_movs.columns.get_loc("Cantidad"),None,workbook.add_format({"num_format":"0.0000"}))
+                    worksheet.set_column(df_movs.columns.get_loc("Precio"),df_movs.columns.get_loc("Precio"),None,workbook.add_format({"num_format":"0.0000"}))
+                    usd_format_monto=workbook.add_format({"num_format":"0.00"})
+                    clp_format_monto=workbook.add_format({"num_format":"0"})
+                    moneda_col_m=df_movs.columns.get_loc("Moneda")
+                    monto_col_m=df_movs.columns.get_loc("Monto")
+                    for row_num,row_data in enumerate(df_movs.itertuples(index=False),start=1):
+                        currency=row_data[moneda_col_m]
+                        monto_val=row_data[monto_col_m]
+                        if pd.notnull(monto_val):
+                            if str(currency).upper()=="USD":
+                                worksheet.write_number(row_num,monto_col_m,monto_val,usd_format_monto)
+                            else:
+                                worksheet.write_number(row_num,monto_col_m,monto_val,clp_format_monto)
 
 def BTG_Parser(input: Path, output: Path):
     process_btg_files(input, output)
