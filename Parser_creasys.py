@@ -17,7 +17,7 @@ class ParserApp:
         self.ventana.configure(bg='#f0f0f0')
         self.scripts = {
             'BTG': BTG_Parser,
-            'BanchileInversiones': BanChile_Parser,
+            'Banchile': BanChile_Parser,
             'Security': Security_Parser,
             'Santander': Santander_Parser,
             'Bice': Bice_parser,

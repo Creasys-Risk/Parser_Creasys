@@ -140,7 +140,7 @@ def JPM_Parser(input: Path, output: Path):
     results = []
 
     for file in input.iterdir():
-        if file.name == ".gitkeep": 
+        if ".pdf" not in file.name:
             continue
 
         reader = PdfReader(file)
