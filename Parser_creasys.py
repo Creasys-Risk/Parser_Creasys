@@ -9,6 +9,7 @@ from Security.security import Security_Parser
 from Santander.santander import Santander_Parser
 from Bice.bice import Bice_parser
 from JP_Morgan.jp_morgan import JPM_Parser
+from static.icon_base64 import icon
 
 class ParserApp:
     def __init__(self, ventana: tk.Tk):
@@ -179,6 +180,15 @@ class ParserApp:
         self.proceso_activo = False
 
 if __name__ == "__main__":
+    import base64
+    icondata= base64.b64decode(icon)
+    tempFile= "icon.ico"
+    iconfile= open(tempFile,"wb")
+    iconfile.write(icondata)
+    iconfile.close()
+
     ventana = tk.Tk()
+    ventana.iconbitmap(tempFile)
     app = ParserApp(ventana)
     ventana.mainloop()
+    os.remove(tempFile)
